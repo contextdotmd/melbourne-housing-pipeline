@@ -1,0 +1,239 @@
+version: 2
+
+models:
+  - name: analytics_suburb_monthly_market
+    description: >
+      Suburb × month market health. Built over a complete grid of suburbs and calendar months
+      rather than only the months that saw activity — with 112 active days across three years,
+      aggregating observed months alone would make `LAG` compare non-adjacent months while
+      looking entirely correct. A month with no listings appears with zero, not as a gap.
+
+      Clearance rate is sales ÷ all listing outcomes, which is why the fact retains non-sales.
+      Price per room stands in for price per square metre: the source file carries no area.
+    columns:
+      - name: suburb_key
+        tests:
+          - not_null
+          - relationships: {arguments: {to: ref('dim_suburb'), field: suburb_key}}
+      - name: month_start
+        tests: [not_null]
+      - name: listings
+        tests: [not_null]
+      - name: clearance_rate
+        description: sales ÷ listings. Null when the suburb had no listings that month.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [suburb_key, month_start]
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "clearance_rate is null or (clearance_rate >= 0 and clearance_rate <= 1)"
+            config: {alias: clearance_rate_is_a_proportion}
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "sales <= listings"
+            config: {alias: sales_cannot_exceed_listings}
+
+  - name: analytics_agent_performance
+    description: >
+      Agent × region × month. Share of region is a windowed sum, rank is a dense_rank, and
+      auction share comes from dim_sale_method.is_auction rather than from a single code —
+      deriving it from a code that cannot survive the price filter is how a metric ends up
+      structurally always zero.
+    columns:
+      - name: agent_key
+        tests:
+          - not_null
+          - relationships: {arguments: {to: ref('dim_agent'), field: agent_key}}
+      - name: month_start
+        tests: [not_null]
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [agent_key, region_name, month_start]
+
+  - name: analytics_repeat_sales
+    description: >
+      Properties that sold twice with a disclosed price, with holding period and annualised
+      return. Only meaningful because the re-scrape recaptures were collapsed first — left in,
+      this model would report thousands of pairs seven days apart at zero percent change.
+    columns:
+      - name: property_key
+        tests:
+          - not_null
+          - relationships: {arguments: {to: ref('dim_property'), field: property_key}}
+      - name: days_held
+        tests: [not_null]
+    data_tests:
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "days_held > 0"
+            config: {alias: repeat_sales_move_forward_in_time}
+
+  - name: analytics_vendor_expectation_gap
+    description: >
+      Where a property was passed in or vendor-bid at a known figure and later sold at a known
+      price, the gap between the two. Only computable because the bid on an unsold outcome is
+      preserved as its own measure (ADR-0005) instead of being averaged in with sale prices.
+    columns:
+      - name: property_key
+        tests:
+          - not_null
+          - relationships: {arguments: {to: ref('dim_property'), field: property_key}}
+      - name: bid_amount
+        tests: [not_null]
+      - name: eventual_sale_price
+        tests: [not_null]
+
+unit_tests:
+  # -------------------------------------------------------------- suburb monthly market
+  - name: clearance_rate_is_sales_over_all_outcomes
+    description: >
+      Three listings, two sold — 0.667, not 1.0. Computing it over sold rows only would make
+      every suburb 100% and the metric meaningless.
+    model: analytics_suburb_monthly_market
+    given:
+      - input: ref('fact__listing_outcome')
+        rows:
+          - {suburb_key: kew, event_date: "2017-04-01", is_sold: true,  is_auction: true, sale_price: 900000, rooms: 3}
+          - {suburb_key: kew, event_date: "2017-04-08", is_sold: true,  is_auction: true, sale_price: 1100000, rooms: 3}
+          - {suburb_key: kew, event_date: "2017-04-15", is_sold: false, is_auction: true, sale_price: , rooms: 3}
+      - input: ref('dim_date')
+        rows:
+          - {date_day: "2017-04-01", month_start: "2017-04-01"}
+          - {date_day: "2017-04-08", month_start: "2017-04-01"}
+          - {date_day: "2017-04-15", month_start: "2017-04-01"}
+      - input: ref('dim_suburb')
+        rows:
+          - {suburb_key: kew, suburb_name: Kew, region_name: "Southern Metropolitan", postcode: "3101", cbd_distance_km: 5.0}
+    expect:
+      rows:
+        - {suburb_key: kew, month_start: "2017-04-01", listings: 3, sales: 2, clearance_rate: 0.6666666666666666}
+
+  - name: month_on_month_change_is_null_at_the_start_of_a_series
+    description: >
+      There is no previous month to compare against. Zero would read as "no change", which is
+      a different and false claim.
+    model: analytics_suburb_monthly_market
+    given:
+      - input: ref('fact__listing_outcome')
+        rows:
+          - {suburb_key: kew, event_date: "2017-04-01", is_sold: true, is_auction: true, sale_price: 900000, rooms: 3}
+          - {suburb_key: kew, event_date: "2017-05-06", is_sold: true, is_auction: true, sale_price: 990000, rooms: 3}
+      - input: ref('dim_date')
+        rows:
+          - {date_day: "2017-04-01", month_start: "2017-04-01"}
+          - {date_day: "2017-05-06", month_start: "2017-05-01"}
+      - input: ref('dim_suburb')
+        rows:
+          - {suburb_key: kew, suburb_name: Kew, region_name: "Southern Metropolitan", postcode: "3101", cbd_distance_km: 5.0}
+    expect:
+      rows:
+        - {month_start: "2017-04-01", median_sale_price: 900000, median_sale_price_mom_change: }
+        - {month_start: "2017-05-01", median_sale_price: 990000, median_sale_price_mom_change: 90000}
+
+  - name: a_month_with_no_activity_is_zero_not_missing
+    description: >
+      The reason dim_date is a generated spine. Without the empty April row, LAG in May would
+      reach back to March and report a month-on-month change across a two-month gap.
+    model: analytics_suburb_monthly_market
+    given:
+      - input: ref('fact__listing_outcome')
+        rows:
+          - {suburb_key: kew, event_date: "2017-03-04", is_sold: true, is_auction: true, sale_price: 900000, rooms: 3}
+          - {suburb_key: kew, event_date: "2017-05-06", is_sold: true, is_auction: true, sale_price: 990000, rooms: 3}
+      - input: ref('dim_date')
+        rows:
+          - {date_day: "2017-03-04", month_start: "2017-03-01"}
+          - {date_day: "2017-04-01", month_start: "2017-04-01"}
+          - {date_day: "2017-05-06", month_start: "2017-05-01"}
+      - input: ref('dim_suburb')
+        rows:
+          - {suburb_key: kew, suburb_name: Kew, region_name: "Southern Metropolitan", postcode: "3101", cbd_distance_km: 5.0}
+    expect:
+      rows:
+        - {month_start: "2017-03-01", listings: 1, sales: 1, clearance_rate: 1.0}
+        - {month_start: "2017-04-01", listings: 0, sales: 0, clearance_rate: }
+        - {month_start: "2017-05-01", listings: 1, sales: 1, clearance_rate: 1.0}
+
+  # -------------------------------------------------------------- agent performance
+  - name: auction_share_is_not_structurally_zero
+    description: >
+      Guards the classic failure: deriving auction participation from a code whose rows are
+      excluded upstream, giving a column that is mathematically incapable of being non-zero.
+      is_auction comes from the method dimension, so it survives the price filter.
+    model: analytics_agent_performance
+    given:
+      - input: ref('fact__listing_outcome')
+        rows:
+          - {agent_key: nelson, suburb_key: kew, event_date: "2017-04-01", is_sold: true,  is_auction: true,  sale_price: 900000}
+          - {agent_key: nelson, suburb_key: kew, event_date: "2017-04-08", is_sold: true,  is_auction: false, sale_price: 800000}
+          - {agent_key: nelson, suburb_key: kew, event_date: "2017-04-15", is_sold: false, is_auction: true,  sale_price: }
+      - input: ref('dim_date')
+        rows:
+          - {date_day: "2017-04-01", month_start: "2017-04-01"}
+          - {date_day: "2017-04-08", month_start: "2017-04-01"}
+          - {date_day: "2017-04-15", month_start: "2017-04-01"}
+      - input: ref('dim_suburb')
+        rows:
+          - {suburb_key: kew, suburb_name: Kew, region_name: "Southern Metropolitan"}
+      - input: ref('dim_agent')
+        rows:
+          - {agent_key: nelson, agent_name: Nelson}
+    expect:
+      rows:
+        - {agent_key: nelson, month_start: "2017-04-01", listings: 3, sales: 2, gmv: 1700000, auction_share: 0.6666666666666666, region_gmv_share: 1.0, rank_by_gmv_in_region: 1}
+
+  # -------------------------------------------------------------- repeat sales
+  - name: repeat_sales_needs_two_disclosed_sales
+    description: A single sale, or a second outcome that did not sell, is not a repeat sale.
+    model: analytics_repeat_sales
+    given:
+      - input: ref('fact__listing_outcome')
+        rows:
+          - {property_key: p1, suburb_key: kew, event_date: "2016-04-02", is_sold: true,  sale_price: 800000}
+          - {property_key: p1, suburb_key: kew, event_date: "2018-04-07", is_sold: true,  sale_price: 1000000}
+          - {property_key: p2, suburb_key: kew, event_date: "2016-04-02", is_sold: true,  sale_price: 700000}
+          - {property_key: p3, suburb_key: kew, event_date: "2016-04-02", is_sold: true,  sale_price: 600000}
+          - {property_key: p3, suburb_key: kew, event_date: "2017-04-01", is_sold: false, sale_price: }
+    expect:
+      rows:
+        - {property_key: p1, previous_sale_price: 800000, sale_price: 1000000, days_held: 735}
+
+  - name: a_recapture_pair_can_never_appear_as_a_repeat_sale
+    description: >
+      Regression guard. Two disclosed sales seven days apart at an identical price is the
+      signature of a republished snapshot, not a resale. The collapse upstream should mean
+      this pair never reaches the fact — but if it ever did, it must not be reported as a
+      735-day-style holding period at 0% return.
+    model: analytics_repeat_sales
+    given:
+      - input: ref('fact__listing_outcome')
+        rows:
+          - {property_key: p1, suburb_key: kew, event_date: "2017-12-16", is_sold: true, sale_price: 970000}
+          - {property_key: p1, suburb_key: kew, event_date: "2017-12-23", is_sold: true, sale_price: 970000}
+    expect:
+      rows: []
+
+  # -------------------------------------------------------------- vendor expectation gap
+  - name: a_bid_followed_by_a_later_sale_becomes_a_gap
+    model: analytics_vendor_expectation_gap
+    given:
+      - input: ref('fact__listing_outcome')
+        rows:
+          - {property_key: p1, suburb_key: balwyn, event_date: "2017-04-01", is_sold: false, bid_amount: 2700000, sale_price: }
+          - {property_key: p1, suburb_key: balwyn, event_date: "2017-07-01", is_sold: true,  bid_amount: , sale_price: 2900000}
+    expect:
+      rows:
+        - {property_key: p1, bid_amount: 2700000, eventual_sale_price: 2900000, gap_amount: 200000, days_to_sale: 91}
+
+  - name: a_sale_before_the_bid_is_not_a_gap
+    description: Direction matters — the bid must precede the sale for the comparison to mean anything.
+    model: analytics_vendor_expectation_gap
+    given:
+      - input: ref('fact__listing_outcome')
+        rows:
+          - {property_key: p1, suburb_key: balwyn, event_date: "2017-04-01", is_sold: true,  bid_amount: , sale_price: 2900000}
+          - {property_key: p1, suburb_key: balwyn, event_date: "2017-07-01", is_sold: false, bid_amount: 2700000, sale_price: }
+    expect:
+      rows: []
