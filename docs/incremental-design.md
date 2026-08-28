@@ -9,7 +9,9 @@ Three changes, in this order:
 
 1. **Detect the delta at ingestion**, by row hash — not in dbt. With a full-snapshot feed
    there is nothing for an incremental model to skip, so this is the change that unlocks the
-   other two.
+   other two. **If the source already sends a daily delta file, this step is free** — the
+   vendor has done it, and steps 2 and 3 are all that remain. That is the case where building
+   incrementally from day one is the right call (see ADR-0008).
 2. **Reprocess by property, not by date window.** Both deduplication rules partition by a key
    that contains the property, so a property's rows never interact with another property's.
    Pulling a touched property's *entire* history is therefore always correct — and it removes
@@ -140,7 +142,12 @@ The existing suite mostly carries over; three additions are specific to incremen
 
 ## When to switch it on
 
-Not on row count — on build time against the schedule. At roughly 21,000 events a year this
+**If the feed is a daily delta, build it this way from the start.** The prerequisite is already
+satisfied, history grows without bound while the daily delta stays flat, and retrofitting later
+means backfilling the design onto years of accumulated rows.
+
+Under the cumulative snapshot we actually have, the trigger is different — not row count, but
+build time against the schedule. At roughly 21,000 events a year this
 dataset would take decades to become inconvenient, and a national feed at ten times the volume
 still rebuilds in seconds on a real warehouse.
 

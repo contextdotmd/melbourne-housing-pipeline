@@ -1,73 +1,77 @@
 ---
-status: accepted
+status: accepted — conditional on the feed being a cumulative snapshot
 ---
 
-# No incremental materialisation
+# Full refresh, because this feed is a cumulative snapshot
 
-Every model is rebuilt in full on each run. At 63,023 rows the entire warehouse builds in
-about 11 seconds, so incrementality would buy nothing on compute while introducing watermark
-logic, merge keys, and the class of bug where a strict `>` comparison silently drops same-day
-arrivals.
+Every model is rebuilt in full on each run. At 63,023 rows the whole warehouse builds in about
+11 seconds, so incrementality would buy nothing on compute while introducing watermark logic,
+merge keys, and the class of bug where a strict `>` comparison silently drops arrivals.
 
-## What the production feed actually looks like
+**This decision depends on the delivery pattern, not on the row count.** It is recorded that way
+deliberately: the row count is what people usually cite, and it is the weaker reason.
 
-Not a guess — the data says so:
+## What we know about the feed, and how
 
-- **It is a full-file snapshot, republished periodically.** The re-scrape artefact
-  (ADR-0006) is the proof: the same rows reappeared across five consecutive publications with
-  new capture dates. A feed that only appended deltas could not produce that.
-- **It is cumulative.** Each publication carries the whole history plus new events.
-- **Rows are not immutable.** Restatements are present in a single snapshot — a sale recorded
-  once as "not disclosed" and again with a figure. Content changes after first publication.
+We were given a file, not a contract, so the pattern was inferred from the data:
 
-So the pattern is: *full cumulative snapshot, with appends and in-place restatements.*
+- **It is a cumulative snapshot, republished periodically.** The re-scrape artefact
+  (ADR-0006) is the proof — the same rows reappearing across five consecutive publications
+  under new capture dates is something a delta feed cannot produce.
+- **Rows are not immutable.** Restatements are present within a single snapshot: a sale
+  recorded once as "not disclosed" and again with a figure.
 
-## Why that pattern argues for full refresh, not against it
+## Why that particular pattern favours full refresh
 
-The obvious reading is that a cumulative snapshot is wasteful to reprocess. The less obvious
-one matters more: **restatement makes full refresh the more correct choice, not merely the
-cheaper one.**
+Both deduplication rules are window functions over history. Under a cumulative snapshot, a full
+refresh re-derives them from the file every run, so a correction published today is applied to
+a two-year-old event automatically and for free.
 
-Both deduplication rules are window functions over history. Recapture clustering needs the
-previous appearance of the same signature; restatement resolution needs every row sharing
-`(property, date, method, agent)`. A full refresh re-derives both from the current snapshot
-every run, so a correction arriving today is applied to an event from two years ago
-automatically.
+An incremental model would not inherit that. Worse, the natural filter is actively wrong: a
+restatement *arrives* now but carries an *old* event date, so an event-time window never sees
+it and the duplicate persists permanently, silently. Getting it right requires reprocessing by
+affected key — real work, done to reproduce something full refresh already does.
 
-An incremental model would not get that for free. The natural filter — "rows whose
-`event_date` is within the last N days" — is exactly wrong, because a restatement arrives
-*now* but carries an *old* event date. Filtering on event time would never see it, and the
-duplicate would persist in the fact permanently.
+There is also a prerequisite that is easy to miss. Under a cumulative snapshot **every row
+arrives every day**, so "rows changed since last run" is the entire file until something
+computes the delta. An incremental model bolted on without that degenerates into a slower full
+refresh.
 
-Doing it correctly means reprocessing by *affected key* rather than by date: collect the
-groups and signatures touched by the incoming load, pull their full history back in, re-derive,
-and merge. That is a genuine engineering exercise, and it exists to reproduce something full
-refresh already does.
+## If the feed pattern changes, so does this decision
 
-## When to revisit, and how
+| Feed pattern | Right answer | Why |
+|---|---|---|
+| **Cumulative snapshot** (what we have) | Full refresh | Restatement correctness comes free; a delta must be computed before incrementality means anything |
+| **Daily delta** — each file holds only new and corrected records | **Incremental, from the start** | The delta is already computed by the vendor, so the hard prerequisite disappears. History grows without bound while the daily delta stays flat, and full refresh over ever-growing history is the wrong shape even while it remains fast |
+| **Rolling window** — each file holds the last N days, overlapping | Incremental, scoped to the window | A hybrid: dedupe the overlap on arrival, then treat as a delta |
 
-Measured inputs for sizing a look-back, should it ever be needed: the longest collapsed
-cluster spans **23 days** and holds at most **5 rows**; 20 signatures span more than one
-cluster. A 90-day look-back would carry a wide margin.
+Under a delta feed the correctness argument above **does not transfer**. Full refresh only
+inherits restatements automatically because today's snapshot contains them; a delta feed
+delivers the restatement as a new row against an old event date either way. The advantage
+disappears and only the cost remains — so the recommendation inverts.
 
-Revisit when the build stops fitting the schedule — not when the row count merely looks large.
-At roughly 21,000 events per year, this dataset would take decades to become inconvenient, and
-a national feed at ten times the volume still rebuilds in seconds on a real warehouse.
+Note that volume would still not force the change: at roughly 21,000 events a year, a decade of
+history is 210,000 rows, which rebuilds in about two seconds. The argument for building
+incrementally under a delta feed is not speed. It is that unbounded work per run is the wrong
+shape, and retrofitting it onto ten years of accumulated history costs more than building it in.
 
-The first thing to make incremental is **ingestion**, not the models: re-parsing a large source
-file every run is the real waste. That is already half-solved — `load_id` is the source
-SHA-256, so an unchanged file is detectable as a no-op.
+**One thing does not change with the feed pattern:** reprocessing must be scoped by *property*,
+never by an event-date window. Both dedup rules partition by a key containing the property, so a
+property's rows never interact with another property's — which makes whole-property reprocessing
+provably safe and removes the look-back window entirely. See
+[docs/incremental-design.md](../incremental-design.md).
 
-If the fact must eventually go incremental:
+## The question to ask before revisiting
 
-1. `materialized='incremental'`, `unique_key='listing_outcome_key'`,
-   `incremental_strategy='delete+insert'`.
-2. Select the affected keys from the incoming load, **not** a date window.
-3. Reprocess the full history of those keys so the window functions see complete groups.
-4. Keep the row-ledger test, which is what would catch a look-back that is too short.
+Not "how many rows are there?" but **"what does the source actually send, and can it restate?"**
+Those two answers determine the design. Everything else is sizing.
 
 ## Consequences
 
 The README documents this so the omission reads as a scoping decision rather than an oversight.
-The risk carried is that the build time grows silently; the mitigation is that it is measured
-on every run and reported in the ingest receipt.
+The risk carried is that build time grows unnoticed; the mitigation is that it is measured on
+every run and recorded in the ingest receipt.
+
+Reference dimensions loaded from seeds (`seed_sale_method`, `seed_property_type`) stay full
+refresh under every pattern above: they are small, hand-maintained reference data, and
+incrementality on ten rows is pure ceremony.
