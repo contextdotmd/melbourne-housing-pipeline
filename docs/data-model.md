@@ -25,7 +25,7 @@ figure on unsold rows is preserved as a distinct measure (ADR-0005).
 
 | Entity | Grain — one row per… | Count | Type |
 |---|---|---|---|
-| **Listing outcome** | campaign result for one property on one event date | 59,801 | fact |
+| **Listing outcome** | campaign result for one property on one event date | 59,821 | fact |
 | **Property** | dwelling, identified by suburb + street address | 58,715 | dimension |
 | **Suburb** | suburb | **377** | dimension |
 | **Agent** | selling agency | **470** | dimension |

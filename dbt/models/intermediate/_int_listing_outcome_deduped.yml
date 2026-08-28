@@ -3,14 +3,14 @@ version: 2
 models:
   - name: int__listing_outcome_clustered
     description: >
-      Assigns every row a recapture cluster and a rank within it. This model exists so that
-      the surviving rows and the quarantined rows are derived from one expression rather than
-      two: `deduped` takes rank 1, `quarantine` takes the rest, and the two are complementary
-      by construction. Computing the rule twice is how a clean table and its quarantine drift
+      Assigns every row a recapture cluster and a rank within it. This model exists so the
+      surviving rows and the quarantined rows derive from one expression rather than two:
+      `deduped` takes rank 1, `quarantine` takes the rest, and the two are complementary by
+      construction. Computing the rule twice is how a clean table and its quarantine drift
       apart and start losing rows between them.
 
       A cluster breaks whenever consecutive appearances of the same business signature are
-      more than `recapture_window_days` apart. Rows within a cluster are republished snapshots
+      more than `recapture_window_days` apart. Rows inside a cluster are republished snapshots
       of one event; rows in different clusters are genuinely separate campaigns.
     columns:
       - name: recapture_rank
@@ -19,13 +19,13 @@ models:
       - name: business_signature
         description: >
           Hash of every business column except the date. The artefact varies only the date, so
-          any signature that includes the date is structurally blind to it.
+          any signature including the date is structurally blind to it.
+        tests: [not_null]
+      - name: surviving_event_date
         tests: [not_null]
 
   - name: int__listing_outcome_deduped
-    description: >
-      One row per genuine listing outcome — the earliest appearance of each cluster. Feeds the
-      marts layer.
+    description: One row per genuine listing outcome — the earliest appearance of each cluster.
     columns:
       - name: event_date
         tests: [not_null]
@@ -39,6 +39,8 @@ models:
       inspectable and challengeable — anyone who disputes the window can see exactly what it
       affected (ADR-0006).
     columns:
+      - name: quarantine_key
+        tests: [not_null, unique]
       - name: reason
         tests:
           - not_null
@@ -50,128 +52,147 @@ models:
         tests: [not_null]
 
 unit_tests:
-  - name: a_five_week_republication_chain_collapses_to_its_earliest_date
+  # ---------------------------------------------------------------- the clustering rule
+  - name: a_five_week_republication_chain_becomes_one_cluster
     description: >
       The Christmas shutdown artefact in miniature: one snapshot republished weekly, then once
-      more two days later. Five rows, one event.
-    model: int__listing_outcome_deduped
+      more two days later. Five rows, one event — every row points at the same survivor.
+    model: int__listing_outcome_clustered
     given:
       - input: ref('int__listing_outcome')
         rows:
-          - {suburb_key: kew, street_address_key: "1 acacia pl", rooms: 2, type_code: u, method_code: VB, agent_key: jellis, sale_price: , bid_amount: 750000, is_sold: false, event_date: "2017-12-16", source_row: 1}
-          - {suburb_key: kew, street_address_key: "1 acacia pl", rooms: 2, type_code: u, method_code: VB, agent_key: jellis, sale_price: , bid_amount: 750000, is_sold: false, event_date: "2017-12-23", source_row: 2}
-          - {suburb_key: kew, street_address_key: "1 acacia pl", rooms: 2, type_code: u, method_code: VB, agent_key: jellis, sale_price: , bid_amount: 750000, is_sold: false, event_date: "2017-12-30", source_row: 3}
-          - {suburb_key: kew, street_address_key: "1 acacia pl", rooms: 2, type_code: u, method_code: VB, agent_key: jellis, sale_price: , bid_amount: 750000, is_sold: false, event_date: "2018-01-06", source_row: 4}
-          - {suburb_key: kew, street_address_key: "1 acacia pl", rooms: 2, type_code: u, method_code: VB, agent_key: jellis, sale_price: , bid_amount: 750000, is_sold: false, event_date: "2018-01-08", source_row: 5}
+          - {suburb_key: kew, street_address_key: "1 acacia pl", rooms: 2, type_code: u, method_code: VB, agent_key: jellis, sale_price: , bid_amount: 750000, event_date: "2017-12-16", source_row: 1}
+          - {suburb_key: kew, street_address_key: "1 acacia pl", rooms: 2, type_code: u, method_code: VB, agent_key: jellis, sale_price: , bid_amount: 750000, event_date: "2017-12-23", source_row: 2}
+          - {suburb_key: kew, street_address_key: "1 acacia pl", rooms: 2, type_code: u, method_code: VB, agent_key: jellis, sale_price: , bid_amount: 750000, event_date: "2017-12-30", source_row: 3}
+          - {suburb_key: kew, street_address_key: "1 acacia pl", rooms: 2, type_code: u, method_code: VB, agent_key: jellis, sale_price: , bid_amount: 750000, event_date: "2018-01-06", source_row: 4}
+          - {suburb_key: kew, street_address_key: "1 acacia pl", rooms: 2, type_code: u, method_code: VB, agent_key: jellis, sale_price: , bid_amount: 750000, event_date: "2018-01-08", source_row: 5}
+    expect:
+      rows:
+        - {event_date: "2017-12-16", recapture_rank: 1, surviving_event_date: "2017-12-16"}
+        - {event_date: "2017-12-23", recapture_rank: 2, surviving_event_date: "2017-12-16"}
+        - {event_date: "2017-12-30", recapture_rank: 3, surviving_event_date: "2017-12-16"}
+        - {event_date: "2018-01-06", recapture_rank: 4, surviving_event_date: "2017-12-16"}
+        - {event_date: "2018-01-08", recapture_rank: 5, surviving_event_date: "2017-12-16"}
+
+  - name: a_relisting_months_later_starts_a_new_cluster
+    description: >
+      Identical on every column except the date, but 91 days apart — a property passed in
+      twice at the same reserve with the same agent. A blanket rule would wrongly merge these.
+    model: int__listing_outcome_clustered
+    given:
+      - input: ref('int__listing_outcome')
+        rows:
+          - {suburb_key: balwyn, street_address_key: "9 kenilworth st", rooms: 5, type_code: h, method_code: PI, agent_key: fletchers, sale_price: , bid_amount: 2700000, event_date: "2017-04-01", source_row: 1}
+          - {suburb_key: balwyn, street_address_key: "9 kenilworth st", rooms: 5, type_code: h, method_code: PI, agent_key: fletchers, sale_price: , bid_amount: 2700000, event_date: "2017-07-01", source_row: 2}
+    expect:
+      rows:
+        - {event_date: "2017-04-01", recapture_rank: 1, surviving_event_date: "2017-04-01"}
+        - {event_date: "2017-07-01", recapture_rank: 1, surviving_event_date: "2017-07-01"}
+
+  - name: exactly_twenty_one_days_apart_still_clusters
+    description: The window is inclusive. Pinned so the boundary cannot drift silently.
+    model: int__listing_outcome_clustered
+    given:
+      - input: ref('int__listing_outcome')
+        rows:
+          - {suburb_key: kew, street_address_key: "2 bay rd", rooms: 3, type_code: h, method_code: S, agent_key: nelson, sale_price: 900000, bid_amount: , event_date: "2017-04-01", source_row: 1}
+          - {suburb_key: kew, street_address_key: "2 bay rd", rooms: 3, type_code: h, method_code: S, agent_key: nelson, sale_price: 900000, bid_amount: , event_date: "2017-04-22", source_row: 2}
+    expect:
+      rows:
+        - {event_date: "2017-04-01", recapture_rank: 1}
+        - {event_date: "2017-04-22", recapture_rank: 2}
+
+  - name: twenty_two_days_apart_breaks_the_cluster
+    model: int__listing_outcome_clustered
+    given:
+      - input: ref('int__listing_outcome')
+        rows:
+          - {suburb_key: kew, street_address_key: "2 bay rd", rooms: 3, type_code: h, method_code: S, agent_key: nelson, sale_price: 900000, bid_amount: , event_date: "2017-04-01", source_row: 1}
+          - {suburb_key: kew, street_address_key: "2 bay rd", rooms: 3, type_code: h, method_code: S, agent_key: nelson, sale_price: 900000, bid_amount: , event_date: "2017-04-23", source_row: 2}
+    expect:
+      rows:
+        - {event_date: "2017-04-01", recapture_rank: 1}
+        - {event_date: "2017-04-23", recapture_rank: 1}
+
+  - name: a_different_price_is_a_different_signature
+    description: >
+      Same property, same agent, a week apart, but a different figure — a genuine second
+      campaign, not a republished snapshot.
+    model: int__listing_outcome_clustered
+    given:
+      - input: ref('int__listing_outcome')
+        rows:
+          - {suburb_key: brunswick, street_address_key: "70 gold st", rooms: 4, type_code: h, method_code: PI, agent_key: jellis, sale_price: , bid_amount: 1250000, event_date: "2017-04-01", source_row: 1}
+          - {suburb_key: brunswick, street_address_key: "70 gold st", rooms: 4, type_code: h, method_code: PI, agent_key: jellis, sale_price: , bid_amount: 1300000, event_date: "2017-04-08", source_row: 2}
+    expect:
+      rows:
+        - {event_date: "2017-04-01", recapture_rank: 1}
+        - {event_date: "2017-04-08", recapture_rank: 1}
+
+  - name: a_different_agent_is_a_different_signature
+    model: int__listing_outcome_clustered
+    given:
+      - input: ref('int__listing_outcome')
+        rows:
+          - {suburb_key: balwyn, street_address_key: "9 kenilworth st", rooms: 5, type_code: h, method_code: PI, agent_key: hockingstuart, sale_price: , bid_amount: 2700000, event_date: "2017-04-01", source_row: 1}
+          - {suburb_key: balwyn, street_address_key: "9 kenilworth st", rooms: 5, type_code: h, method_code: PI, agent_key: fletchers, sale_price: , bid_amount: 2700000, event_date: "2017-04-08", source_row: 2}
+    expect:
+      rows:
+        - {event_date: "2017-04-01", recapture_rank: 1}
+        - {event_date: "2017-04-08", recapture_rank: 1}
+
+  - name: byte_identical_rows_on_the_same_date_cluster
+    description: The file holds two of these. A zero-day gap is inside any window.
+    model: int__listing_outcome_clustered
+    given:
+      - input: ref('int__listing_outcome')
+        rows:
+          - {suburb_key: kew, street_address_key: "2 bay rd", rooms: 3, type_code: h, method_code: S, agent_key: nelson, sale_price: 900000, bid_amount: , event_date: "2017-04-01", source_row: 1}
+          - {suburb_key: kew, street_address_key: "2 bay rd", rooms: 3, type_code: h, method_code: S, agent_key: nelson, sale_price: 900000, bid_amount: , event_date: "2017-04-01", source_row: 2}
+    expect:
+      rows:
+        - {event_date: "2017-04-01", recapture_rank: 1}
+        - {event_date: "2017-04-01", recapture_rank: 2}
+
+  - name: null_prices_compare_equal_within_a_signature
+    description: >
+      SN, PN, SS and W are 100% null-priced. If nulls did not compare equal, the artefact
+      would survive untouched in exactly those methods.
+    model: int__listing_outcome_clustered
+    given:
+      - input: ref('int__listing_outcome')
+        rows:
+          - {suburb_key: "airport west", street_address_key: "122 parer rd", rooms: 4, type_code: h, method_code: SN, agent_key: brad, sale_price: , bid_amount: , event_date: "2017-12-16", source_row: 1}
+          - {suburb_key: "airport west", street_address_key: "122 parer rd", rooms: 4, type_code: h, method_code: SN, agent_key: brad, sale_price: , bid_amount: , event_date: "2017-12-23", source_row: 2}
+    expect:
+      rows:
+        - {event_date: "2017-12-16", recapture_rank: 1}
+        - {event_date: "2017-12-23", recapture_rank: 2}
+
+  # ---------------------------------------------------------------- the two complementary filters
+  - name: deduped_keeps_only_the_earliest_of_each_cluster
+    model: int__listing_outcome_deduped
+    given:
+      - input: ref('int__listing_outcome_clustered')
+        rows:
+          - {event_date: "2017-12-16", recapture_rank: 1, is_sold: true}
+          - {event_date: "2017-12-23", recapture_rank: 2, is_sold: true}
+          - {event_date: "2017-12-30", recapture_rank: 3, is_sold: true}
+          - {event_date: "2018-03-04", recapture_rank: 1, is_sold: false}
     expect:
       rows:
         - {event_date: "2017-12-16"}
+        - {event_date: "2018-03-04"}
 
-  - name: the_four_republications_land_in_quarantine_pointing_at_the_survivor
+  - name: quarantine_takes_exactly_the_rows_deduped_dropped
     model: quarantine_recaptured_listing
     given:
-      - input: ref('int__listing_outcome')
+      - input: ref('int__listing_outcome_clustered')
         rows:
-          - {suburb_key: kew, street_address_key: "1 acacia pl", rooms: 2, type_code: u, method_code: VB, agent_key: jellis, sale_price: , bid_amount: 750000, is_sold: false, event_date: "2017-12-16", source_row: 1}
-          - {suburb_key: kew, street_address_key: "1 acacia pl", rooms: 2, type_code: u, method_code: VB, agent_key: jellis, sale_price: , bid_amount: 750000, is_sold: false, event_date: "2017-12-23", source_row: 2}
-          - {suburb_key: kew, street_address_key: "1 acacia pl", rooms: 2, type_code: u, method_code: VB, agent_key: jellis, sale_price: , bid_amount: 750000, is_sold: false, event_date: "2017-12-30", source_row: 3}
-          - {suburb_key: kew, street_address_key: "1 acacia pl", rooms: 2, type_code: u, method_code: VB, agent_key: jellis, sale_price: , bid_amount: 750000, is_sold: false, event_date: "2018-01-06", source_row: 4}
-          - {suburb_key: kew, street_address_key: "1 acacia pl", rooms: 2, type_code: u, method_code: VB, agent_key: jellis, sale_price: , bid_amount: 750000, is_sold: false, event_date: "2018-01-08", source_row: 5}
+          - {event_date: "2017-12-16", recapture_rank: 1, surviving_event_date: "2017-12-16", business_signature: sig, source_row: 1}
+          - {event_date: "2017-12-23", recapture_rank: 2, surviving_event_date: "2017-12-16", business_signature: sig, source_row: 2}
+          - {event_date: "2017-12-30", recapture_rank: 3, surviving_event_date: "2017-12-16", business_signature: sig, source_row: 3}
     expect:
       rows:
         - {event_date: "2017-12-23", surviving_event_date: "2017-12-16", reason: suspected_recapture}
         - {event_date: "2017-12-30", surviving_event_date: "2017-12-16", reason: suspected_recapture}
-        - {event_date: "2018-01-06", surviving_event_date: "2017-12-16", reason: suspected_recapture}
-        - {event_date: "2018-01-08", surviving_event_date: "2017-12-16", reason: suspected_recapture}
-
-  - name: a_relisting_months_later_is_not_a_recapture
-    description: >
-      Identical on every column except the date, but 91 days apart — a property passed in
-      twice at the same reserve with the same agent. A blanket rule would wrongly merge these.
-    model: int__listing_outcome_deduped
-    given:
-      - input: ref('int__listing_outcome')
-        rows:
-          - {suburb_key: balwyn, street_address_key: "9 kenilworth st", rooms: 5, type_code: h, method_code: PI, agent_key: fletchers, sale_price: , bid_amount: 2700000, is_sold: false, event_date: "2017-04-01", source_row: 1}
-          - {suburb_key: balwyn, street_address_key: "9 kenilworth st", rooms: 5, type_code: h, method_code: PI, agent_key: fletchers, sale_price: , bid_amount: 2700000, is_sold: false, event_date: "2017-07-01", source_row: 2}
-    expect:
-      rows:
-        - {event_date: "2017-04-01"}
-        - {event_date: "2017-07-01"}
-
-  - name: exactly_twenty_one_days_apart_still_collapses
-    description: The window is inclusive. Pinned so the boundary cannot drift silently.
-    model: int__listing_outcome_deduped
-    given:
-      - input: ref('int__listing_outcome')
-        rows:
-          - {suburb_key: kew, street_address_key: "2 bay rd", rooms: 3, type_code: h, method_code: S, agent_key: nelson, sale_price: 900000, bid_amount: , is_sold: true, event_date: "2017-04-01", source_row: 1}
-          - {suburb_key: kew, street_address_key: "2 bay rd", rooms: 3, type_code: h, method_code: S, agent_key: nelson, sale_price: 900000, bid_amount: , is_sold: true, event_date: "2017-04-22", source_row: 2}
-    expect:
-      rows:
-        - {event_date: "2017-04-01"}
-
-  - name: twenty_two_days_apart_survives_as_two_events
-    model: int__listing_outcome_deduped
-    given:
-      - input: ref('int__listing_outcome')
-        rows:
-          - {suburb_key: kew, street_address_key: "2 bay rd", rooms: 3, type_code: h, method_code: S, agent_key: nelson, sale_price: 900000, bid_amount: , is_sold: true, event_date: "2017-04-01", source_row: 1}
-          - {suburb_key: kew, street_address_key: "2 bay rd", rooms: 3, type_code: h, method_code: S, agent_key: nelson, sale_price: 900000, bid_amount: , is_sold: true, event_date: "2017-04-23", source_row: 2}
-    expect:
-      rows:
-        - {event_date: "2017-04-01"}
-        - {event_date: "2017-04-23"}
-
-  - name: a_different_price_means_a_different_event
-    description: >
-      Same property, same agent, a week apart, but a different figure — that is a genuine
-      second campaign, not a republished snapshot.
-    model: int__listing_outcome_deduped
-    given:
-      - input: ref('int__listing_outcome')
-        rows:
-          - {suburb_key: brunswick, street_address_key: "70 gold st", rooms: 4, type_code: h, method_code: PI, agent_key: jellis, sale_price: , bid_amount: 1250000, is_sold: false, event_date: "2017-04-01", source_row: 1}
-          - {suburb_key: brunswick, street_address_key: "70 gold st", rooms: 4, type_code: h, method_code: PI, agent_key: jellis, sale_price: , bid_amount: 1300000, is_sold: false, event_date: "2017-04-08", source_row: 2}
-    expect:
-      rows:
-        - {event_date: "2017-04-01"}
-        - {event_date: "2017-04-08"}
-
-  - name: a_different_agent_means_a_different_event
-    model: int__listing_outcome_deduped
-    given:
-      - input: ref('int__listing_outcome')
-        rows:
-          - {suburb_key: balwyn, street_address_key: "9 kenilworth st", rooms: 5, type_code: h, method_code: PI, agent_key: hockingstuart, sale_price: , bid_amount: 2700000, is_sold: false, event_date: "2017-04-01", source_row: 1}
-          - {suburb_key: balwyn, street_address_key: "9 kenilworth st", rooms: 5, type_code: h, method_code: PI, agent_key: fletchers, sale_price: , bid_amount: 2700000, is_sold: false, event_date: "2017-04-08", source_row: 2}
-    expect:
-      rows:
-        - {event_date: "2017-04-01"}
-        - {event_date: "2017-04-08"}
-
-  - name: byte_identical_rows_on_the_same_date_collapse_to_one
-    description: The file holds two of these. A zero-day gap is inside any window.
-    model: int__listing_outcome_deduped
-    given:
-      - input: ref('int__listing_outcome')
-        rows:
-          - {suburb_key: kew, street_address_key: "2 bay rd", rooms: 3, type_code: h, method_code: S, agent_key: nelson, sale_price: 900000, bid_amount: , is_sold: true, event_date: "2017-04-01", source_row: 1}
-          - {suburb_key: kew, street_address_key: "2 bay rd", rooms: 3, type_code: h, method_code: S, agent_key: nelson, sale_price: 900000, bid_amount: , is_sold: true, event_date: "2017-04-01", source_row: 2}
-    expect:
-      rows:
-        - {event_date: "2017-04-01"}
-
-  - name: an_undisclosed_sale_chain_collapses_on_null_price
-    description: >
-      Null prices must compare equal within a signature, or the 100%-null codes (SN, PN, SS,
-      W) would never collapse and the artefact would survive in exactly those methods.
-    model: int__listing_outcome_deduped
-    given:
-      - input: ref('int__listing_outcome')
-        rows:
-          - {suburb_key: "airport west", street_address_key: "122 parer rd", rooms: 4, type_code: h, method_code: SN, agent_key: brad, sale_price: , bid_amount: , is_sold: true, event_date: "2017-12-16", source_row: 1}
-          - {suburb_key: "airport west", street_address_key: "122 parer rd", rooms: 4, type_code: h, method_code: SN, agent_key: brad, sale_price: , bid_amount: , is_sold: true, event_date: "2017-12-23", source_row: 2}
-    expect:
-      rows:
-        - {event_date: "2017-12-16"}

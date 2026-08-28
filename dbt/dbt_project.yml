@@ -21,6 +21,12 @@ on-run-start:
     create or replace view landing.listing_outcome as
     select * from read_parquet('data/landing/listing_outcome/*/*.parquet')
 
+vars:
+  # Consecutive appearances of an identical business signature closer together than this are
+  # treated as one event republished, not several events. Observed gaps cluster at 2 and 7
+  # days; the next is 14, then 49 - so this boundary sits in empty space (ADR-0006).
+  recapture_window_days: 21
+
 models:
   melbourne_housing_pipeline:
     staging:
