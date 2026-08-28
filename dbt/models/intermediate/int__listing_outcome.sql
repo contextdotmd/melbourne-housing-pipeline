@@ -61,7 +61,8 @@ select
                                                                   as sale_price_is_disclosed,
 
     staged.load_id,
-    staged.source_row
+    staged.source_row,
+    staged.load_started_at
 
 from staged
 inner join method

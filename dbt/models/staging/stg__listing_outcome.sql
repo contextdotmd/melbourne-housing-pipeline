@@ -39,7 +39,13 @@ select
     price                                        as reported_price,
 
     -- lineage back to the ingest receipt
-    _load_id                                     as load_id,
-    _source_row                                  as source_row
+    landing._load_id                            as load_id,
+    landing._source_row                         as source_row,
 
-from {{ source('landing', 'listing_outcome') }}
+    -- When this row was ingested, as distinct from when the event happened. Restatements
+    -- arrive long after their event date, so ordering loads needs ingestion time.
+    receipt.started_at                           as load_started_at
+
+from {{ source('landing', 'listing_outcome') }} as landing
+left join {{ source('landing', 'ingest_receipt') }} as receipt
+    on landing._load_id = receipt.load_id

@@ -53,6 +53,14 @@ restated as (
     window restatement_group as (
         partition by suburb_key, street_address_key, event_date, method_code, agent_key
         order by
+            -- Recency first. The feed is authoritative about its own current state, so a
+            -- later load supersedes an earlier one even if it carries less detail. Ordering
+            -- by source_row cannot decide this: it numbers rows within one file, so row 5 of
+            -- a small delta against row 40,000 of a historical load says nothing about which
+            -- is current. load_id is a content hash and does not sort either.
+            load_started_at desc nulls last,
+            -- Within one load there is no recency to appeal to, so prefer the row that says
+            -- more: a published figure over a null.
             case when coalesce(sale_price, bid_amount) is not null then 0 else 1 end,
             source_row
     )

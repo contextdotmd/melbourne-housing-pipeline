@@ -60,6 +60,8 @@ unit_tests:
         rows:
           - {suburb: "Croydon", sellerg: "Jellis", address: "1 High St", method: "S", type: "h", postcode: "3136"}
           - {suburb: "croydon", sellerg: "Jellis", address: "1 High St", method: "S", type: "h", postcode: "3136"}
+      - input: source('landing', 'ingest_receipt')
+        rows: []
     expect:
       rows:
         - {suburb_key: "croydon", suburb_name: "Croydon"}
@@ -73,6 +75,8 @@ unit_tests:
           - {suburb: "Kew", sellerg: "VICPROP", address: "2 Bay Rd", method: "S", type: "h", postcode: "3101"}
           - {suburb: "Kew", sellerg: "VICProp", address: "2 Bay Rd", method: "S", type: "h", postcode: "3101"}
           - {suburb: "Kew", sellerg: "Vicprop", address: "2 Bay Rd", method: "S", type: "h", postcode: "3101"}
+      - input: source('landing', 'ingest_receipt')
+        rows: []
     expect:
       rows:
         - {agent_key: "vicprop", agent_name: "VICPROP"}
@@ -87,6 +91,8 @@ unit_tests:
         rows:
           - {suburb: "Kew", sellerg: "Jellis", address: "2 Bay Rd", method: "s", type: "H", postcode: "3101"}
           - {suburb: "Kew", sellerg: "Jellis", address: "3 Bay Rd", method: "PI", type: "u", postcode: "3101"}
+      - input: source('landing', 'ingest_receipt')
+        rows: []
     expect:
       rows:
         - {method_code: "S", type_code: "h"}
@@ -102,6 +108,8 @@ unit_tests:
         rows:
           - {suburb: "Kew", sellerg: "Jellis", address: "2 Bay Rd", method: "S", type: "h", postcode: "3101", price: 1490000}
           - {suburb: "Kew", sellerg: "Jellis", address: "3 Bay Rd", method: "PI", type: "h", postcode: "3101", price: }
+      - input: source('landing', 'ingest_receipt')
+        rows: []
     expect:
       rows:
         - {reported_price: 1490000}
@@ -119,6 +127,8 @@ unit_tests:
           - {suburb: "Kew", sellerg: "Jellis", address: "2 Bay Rd", method: "S", type: "h", postcode: "3101"}
           - {suburb: "Kew", sellerg: "Nelson", address: "3 Bay Rd", method: "PI", type: "u", postcode: "3101"}
           - {suburb: "Ivanhoe", sellerg: "Miles", address: "9 Elm St", method: "W", type: "t", postcode: "3079"}
+      - input: source('landing', 'ingest_receipt')
+        rows: []
     expect:
       rows:
         - {street_address_key: "2 bay rd", agent_key: "jellis"}

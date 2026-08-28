@@ -127,6 +127,68 @@ delete-by-property treatment, or a row reclassified from `suspected_recapture` t
 exist in both tables and the row ledger would break. The ledger test is what would catch it,
 which is the argument for keeping that test in the incremental path.
 
+## Worked example: a later file restates a 2001 sale
+
+The hardest case, and the one that decides whether the design is right.
+
+**Setup.** History holds a June 2001 sale recorded as "sold prior, price not disclosed".
+Today's file carries the same property, date, method and agent — with the price finally
+published at $450,000.
+
+**What has to happen, step by step:**
+
+| Step | What happens |
+|---|---|
+| Ingestion | The row lands under a new `load_id`. Its event date is 2001 — accepted (plausible), and `event_date_min` on the receipt shows the feed reached back 25 years |
+| Staging | Landing globs *all* load partitions, so both versions are present. Staging stays row-preserving, so the ledger still has an anchor |
+| Restatement | Both rows share `(property, date, method, agent)`. The newer load wins; the older is quarantined as `suspected_restatement` |
+| Recapture | The superseded row is already out, so it cannot pollute the chain. Only the winner continues |
+| Incremental scope | Affected property, affected date 2001-06-15. Reprocess `[2001-03-17, 2001-09-13]` for that property — about 7 monthly partitions |
+| Write | `insert_overwrite` replaces those 2001 partitions. Everything from 2002 onwards is untouched |
+
+Verified end to end with two real loads: the fact holds one row at $450,000 with
+`sale_price_is_disclosed = true`, the null-price version is in quarantine, and
+`fact + quarantine = staged` still balances.
+
+### Ordering loads is a prerequisite, and it is not free
+
+Deciding "the newer load wins" needs a way to compare loads. Neither obvious candidate works:
+`source_row` numbers rows within a single file, so row 5 of a small delta against row 40,000 of
+the historical load says nothing about which is current; and `load_id` is a content hash, which
+does not sort.
+
+The ingest receipt already records `started_at`, so it is registered in the warehouse as
+`landing.ingest_receipt` and joined in staging as `load_started_at`. Restatements then order by
+recency first, falling back to informativeness only *within* one load, where there is no
+recency to appeal to.
+
+This is the piece most likely to be missed, because with a single load it is invisible — every
+tie-break looks like it works.
+
+### Two traps in the scope predicate
+
+**Bound the scope by the delta's event dates, not the table's.** The instinctive filter is
+`event_date >= (select max(event_date) from {{ this }}) - 90`. With a table whose maximum is
+2026, that window excludes 2001 entirely and the restatement is never applied. The scope must
+come from the *incoming rows*, which is where the old date actually lives.
+
+**Use an affected-partition set, not a min/max range.** If one delta carries both a 2001
+restatement and a 2026 sale, a `between min and max` predicate spans 25 years and rewrites the
+whole table. Collect the distinct affected months and pass them explicitly:
+
+```sql
+{% set affected = run_query("select distinct date_trunc('month', event_date) …") %}
+{{ config(partitions = affected.columns[0].values()) }}
+```
+
+### What this design still cannot do
+
+A **retraction** — the source deleting a record it published in error — cannot be expressed by
+a delta feed unless it sends tombstones. Full refresh handles it implicitly, because the row
+simply stops appearing. Incremental does not: the row would persist forever. If the feed moves
+to deltas, a deletion marker has to be part of that contract, and it is worth asking for at the
+same time as the delta itself.
+
 ## Tests that would guard it
 
 The existing suite mostly carries over; three additions are specific to incrementality:

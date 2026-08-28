@@ -19,7 +19,13 @@ on-run-start:
   - "create schema if not exists landing"
   - >
     create or replace view landing.listing_outcome as
-    select * from read_parquet('data/landing/listing_outcome/*/*.parquet')
+    select * from read_parquet('{{ var("data_root", "data") }}/landing/listing_outcome/*/*.parquet')
+  # The receipts are not just an audit artefact: they carry started_at, which is the only
+  # thing that can order one load against another. load_id is a content hash and does not
+  # sort, and source_row is meaningful only inside its own file.
+  - >
+    create or replace view landing.ingest_receipt as
+    select * from read_json_auto('{{ var("data_root", "data") }}/ingest_receipt/*.json')
 
 vars:
   # Consecutive appearances of an identical business signature closer together than this are
@@ -32,6 +38,10 @@ vars:
   # known to be safe before anything depends on it. assert_no_cluster_exceeds_lookback.sql
   # fails the build if any dedup cluster ever grows past it.
   incremental_lookback_days: 90
+
+  # Where the loader wrote. Overridable so a build can be pointed at an alternate landing
+  # zone without touching the project — used by the two-load demo in docs/.
+  data_root: data
 
 models:
   melbourne_housing_pipeline:

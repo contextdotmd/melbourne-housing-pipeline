@@ -29,3 +29,18 @@ sources:
           - {name: councilarea, data_type: varchar}
           - {name: _load_id, data_type: varchar, description: "Links every row to its ingest receipt."}
           - {name: _source_row, data_type: integer, description: "1-based row number in the source CSV."}
+
+      - name: ingest_receipt
+        description: >
+          One row per ingest run, read from the receipt JSON. Exists in the warehouse because
+          `started_at` is what orders loads against each other — needed whenever a later file
+          restates a record an earlier one already delivered.
+        columns:
+          - {name: load_id, data_type: varchar}
+          - {name: started_at, data_type: timestamp}
+          - {name: rows_read, data_type: bigint}
+          - {name: rows_loaded, data_type: bigint}
+          - {name: rows_rejected, data_type: bigint}
+          - {name: source_sha256, data_type: varchar}
+          - {name: event_date_min, data_type: varchar}
+          - {name: event_date_max, data_type: varchar}
