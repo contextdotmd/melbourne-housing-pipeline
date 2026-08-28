@@ -10,6 +10,17 @@ test-paths: ["tests"]
 target-path: "target"
 clean-targets: ["target", "dbt_packages"]
 
+# Register the Parquet landing zone as a real view before anything runs. dbt-duckdb can
+# express this as a source `external_location` instead, but such a source never exists as a
+# catalog relation, so dbt cannot introspect its columns when building unit-test fixtures.
+# A real view also means the landing zone is queryable directly in the DuckDB UI.
+# This makes ingestion a hard prerequisite of any dbt invocation, which it already was.
+on-run-start:
+  - "create schema if not exists landing"
+  - >
+    create or replace view landing.listing_outcome as
+    select * from read_parquet('data/landing/listing_outcome/*/*.parquet')
+
 models:
   melbourne_housing_pipeline:
     staging:

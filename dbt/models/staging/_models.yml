@@ -43,6 +43,11 @@ models:
         tests: [not_null]
       - name: postcode
         tests: [not_null]
+      - name: reported_price
+        description: >
+          The source Price column, still overloaded — it is a sale price on some rows and a
+          highest/vendor bid on others. Deliberately NOT called `price` (see CONTEXT.md); the
+          split into sale_price and bid_amount happens in int__listing_outcome.
 
 unit_tests:
   - name: suburb_case_variants_share_one_key_but_keep_their_own_display
@@ -99,8 +104,8 @@ unit_tests:
           - {suburb: "Kew", sellerg: "Jellis", address: "3 Bay Rd", method: "PI", type: "h", postcode: "3101", price: }
     expect:
       rows:
-        - {price: 1490000}
-        - {price: }
+        - {reported_price: 1490000}
+        - {reported_price: }
 
   - name: staging_is_row_preserving
     description: >

@@ -4,10 +4,28 @@ sources:
   - name: landing
     description: >
       Parquet written by src/ingest/loader.py — a typed, contract-checked copy of the source
-      CSV with source column names lowercased and nothing else changed. Row-for-row identical
-      to the rows the loader accepted, which is what lets the row ledger reconcile.
-    meta:
-      external_location: "read_parquet('data/landing/listing_outcome/*/*.parquet')"
+      CSV with column names lowercased and nothing else changed. Row-for-row identical to the
+      rows the loader accepted, which is what lets the row ledger reconcile.
+    schema: landing
     tables:
       - name: listing_outcome
-        description: One row per listing outcome as it appeared in the source file.
+        description: One row per listing outcome, exactly as it appeared in the source file.
+        columns:
+          # Declared rather than left implicit: this puts the landing contract in one
+          # reviewable place and keeps unit-test fixtures independent of what happens to
+          # be sitting in the landing zone at the time.
+          - {name: suburb, data_type: varchar}
+          - {name: address, data_type: varchar}
+          - {name: rooms, data_type: integer}
+          - {name: type, data_type: varchar, description: "Property type code: h, u or t."}
+          - {name: price, data_type: double, description: "Overloaded - sale price or bid. Null on 23% of rows."}
+          - {name: method, data_type: varchar, description: "Outcome code: S, SP, PI, VB, W, SA, SN, PN, SS."}
+          - {name: sellerg, data_type: varchar}
+          - {name: date, data_type: date, description: "Event date, parsed day-first by the loader."}
+          - {name: postcode, data_type: varchar, description: "A label, not a quantity - leading zeros preserved."}
+          - {name: regionname, data_type: varchar}
+          - {name: propertycount, data_type: integer}
+          - {name: distance, data_type: double, description: "Kilometres to the CBD. Decimal."}
+          - {name: councilarea, data_type: varchar}
+          - {name: _load_id, data_type: varchar, description: "Links every row to its ingest receipt."}
+          - {name: _source_row, data_type: integer, description: "1-based row number in the source CSV."}
