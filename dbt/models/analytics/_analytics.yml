@@ -196,6 +196,14 @@ unit_tests:
           - {property_key: p2, suburb_key: kew, event_date: "2016-04-02", is_sold: true,  sale_price: 700000}
           - {property_key: p3, suburb_key: kew, event_date: "2016-04-02", is_sold: true,  sale_price: 600000}
           - {property_key: p3, suburb_key: kew, event_date: "2017-04-01", is_sold: false, sale_price: }
+      - input: ref('dim_property')
+        rows:
+          - {property_key: p1, street_address: "2 Bay Rd"}
+          - {property_key: p2, street_address: "3 Bay Rd"}
+          - {property_key: p3, street_address: "4 Bay Rd"}
+      - input: ref('dim_suburb')
+        rows:
+          - {suburb_key: kew, suburb_name: Kew, region_name: "Southern Metropolitan"}
     expect:
       rows:
         - {property_key: p1, previous_sale_price: 800000, sale_price: 1000000, days_held: 735}
@@ -212,6 +220,14 @@ unit_tests:
         rows:
           - {property_key: p1, suburb_key: kew, event_date: "2017-12-16", is_sold: true, sale_price: 970000}
           - {property_key: p1, suburb_key: kew, event_date: "2017-12-23", is_sold: true, sale_price: 970000}
+      - input: ref('dim_property')
+        rows:
+          - {property_key: p1, street_address: "2 Bay Rd"}
+          - {property_key: p2, street_address: "3 Bay Rd"}
+          - {property_key: p3, street_address: "4 Bay Rd"}
+      - input: ref('dim_suburb')
+        rows:
+          - {suburb_key: kew, suburb_name: Kew, region_name: "Southern Metropolitan"}
     expect:
       rows: []
 
@@ -223,6 +239,12 @@ unit_tests:
         rows:
           - {property_key: p1, suburb_key: balwyn, event_date: "2017-04-01", is_sold: false, bid_amount: 2700000, sale_price: }
           - {property_key: p1, suburb_key: balwyn, event_date: "2017-07-01", is_sold: true,  bid_amount: , sale_price: 2900000}
+      - input: ref('dim_property')
+        rows:
+          - {property_key: p1, street_address: "9 Kenilworth St"}
+      - input: ref('dim_suburb')
+        rows:
+          - {suburb_key: balwyn, suburb_name: Balwyn, region_name: "Southern Metropolitan"}
     expect:
       rows:
         - {property_key: p1, bid_amount: 2700000, eventual_sale_price: 2900000, gap_amount: 200000, days_to_sale: 91}
@@ -235,5 +257,11 @@ unit_tests:
         rows:
           - {property_key: p1, suburb_key: balwyn, event_date: "2017-04-01", is_sold: true,  bid_amount: , sale_price: 2900000}
           - {property_key: p1, suburb_key: balwyn, event_date: "2017-07-01", is_sold: false, bid_amount: 2700000, sale_price: }
+      - input: ref('dim_property')
+        rows:
+          - {property_key: p1, street_address: "9 Kenilworth St"}
+      - input: ref('dim_suburb')
+        rows:
+          - {suburb_key: balwyn, suburb_name: Balwyn, region_name: "Southern Metropolitan"}
     expect:
       rows: []
