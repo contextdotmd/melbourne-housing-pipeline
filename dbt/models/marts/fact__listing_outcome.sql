@@ -1,0 +1,43 @@
+{{ config(materialized='table') }}
+
+-- One row per genuine listing outcome (ADR-0004).
+--
+-- Dimension keys are recomputed from the same column expressions the dimensions use, rather
+-- than joined out of them: the surrogate keys are deterministic MD5 hashes, so recomputing is
+-- both cheaper and impossible to get half-right. The relationships tests prove every key
+-- resolves.
+--
+-- suburb_key is carried alongside property_key so suburb analysis need not route through the
+-- 58,696-row property dimension. assert_fact_suburb_agrees_with_property.sql keeps the two
+-- from drifting.
+
+select
+    -- The surviving row of a cluster is unique on (signature, event_date): each cluster has
+    -- exactly one earliest date.
+    {{ dbt_utils.generate_surrogate_key(['business_signature', 'event_date']) }}
+        as listing_outcome_key,
+
+    -- foreign keys
+    {{ dbt_utils.generate_surrogate_key(['suburb_key', 'street_address_key']) }}
+        as property_key,
+    suburb_key,
+    agent_key,
+    event_date,
+    method_code,
+    type_code,
+
+    -- as-at-this-outcome attribute, not a fact about the dwelling
+    rooms,
+
+    -- mutually exclusive measures (ADR-0005)
+    sale_price,
+    bid_amount,
+    sale_price_is_disclosed,
+    is_sold,
+    is_auction,
+
+    -- lineage back to the ingest receipt
+    load_id,
+    source_row
+
+from {{ ref('int__listing_outcome_deduped') }}
