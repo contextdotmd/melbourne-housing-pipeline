@@ -1,0 +1,71 @@
+version: 2
+
+models:
+  - name: fact__listing_outcome
+    description: >
+      One row per genuine listing outcome: a marketing or auction campaign for one property on
+      one event date, sold or not (ADR-0004).
+
+      Two mutually exclusive measures rather than one overloaded `price`: `sale_price` is
+      populated only when the outcome transacted and the amount was published; `bid_amount`
+      only when it did not (ADR-0005). `rooms` and `type_code` are recorded as at the outcome,
+      not as facts about the dwelling.
+    columns:
+      - name: listing_outcome_key
+        tests: [not_null, unique]
+      - name: property_key
+        tests:
+          - not_null
+          - relationships: {arguments: {to: ref('dim_property'), field: property_key}}
+      - name: suburb_key
+        tests:
+          - not_null
+          - relationships: {arguments: {to: ref('dim_suburb'), field: suburb_key}}
+      - name: agent_key
+        tests:
+          - not_null
+          - relationships: {arguments: {to: ref('dim_agent'), field: agent_key}}
+      - name: event_date
+        tests:
+          - not_null
+          - relationships: {arguments: {to: ref('dim_date'), field: date_day}}
+      - name: method_code
+        tests:
+          - not_null
+          - relationships: {arguments: {to: ref('dim_sale_method'), field: method_code}}
+      - name: type_code
+        tests:
+          - not_null
+          - relationships: {arguments: {to: ref('dim_property_type'), field: type_code}}
+      - name: is_sold
+        tests: [not_null]
+      - name: sale_price
+        description: Null unless the outcome is a sale AND the price was disclosed.
+      - name: bid_amount
+        description: Null unless the outcome is NOT a sale.
+    data_tests:
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "not (sale_price is not null and bid_amount is not null)"
+            config: {alias: fact_measures_are_mutually_exclusive}
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "not (is_sold and bid_amount is not null)"
+            config: {alias: fact_sold_rows_carry_no_bid}
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "not (not is_sold and sale_price is not null)"
+            config: {alias: fact_unsold_rows_carry_no_sale_price}
+
+unit_tests:
+  - name: fact_resolves_foreign_keys_and_carries_measures_through
+    model: fact__listing_outcome
+    given:
+      - input: ref('int__listing_outcome_deduped')
+        rows:
+          - {business_signature: sig1, suburb_key: kew, street_address_key: "2 bay rd", agent_key: nelson, event_date: "2017-04-01", method_code: S, type_code: h, rooms: 3, sale_price: 900000, bid_amount: , is_sold: true, sale_price_is_disclosed: true, load_id: abc, source_row: 1}
+          - {business_signature: sig2, suburb_key: kew, street_address_key: "3 bay rd", agent_key: nelson, event_date: "2017-04-08", method_code: PI, type_code: u, rooms: 2, sale_price: , bid_amount: 750000, is_sold: false, sale_price_is_disclosed: false, load_id: abc, source_row: 2}
+    expect:
+      rows:
+        - {suburb_key: kew, agent_key: nelson, method_code: S, type_code: h, rooms: 3, sale_price: 900000, bid_amount: , is_sold: true}
+        - {suburb_key: kew, agent_key: nelson, method_code: PI, type_code: u, rooms: 2, sale_price: , bid_amount: 750000, is_sold: false}
