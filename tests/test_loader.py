@@ -146,6 +146,45 @@ def test_whitespace_is_not_silently_meaningful(tmp_path):
     assert landing_rows(result)[0]["suburb"] == "Abbotsford"
 
 
+def test_a_future_event_date_is_rejected(tmp_path):
+    """A property cannot have sold tomorrow. 30/12/2087 is corruption, not a record."""
+    row = ROW.replace("1/04/2017", "30/12/2087")
+    result = load_csv(write_csv(tmp_path, HEADER, row), tmp_path / "out", today=dt.date(2018, 10, 13))
+    assert reject_rows(result)[0]["reason"] == "date_in_future"
+
+
+def test_an_implausibly_old_event_date_is_rejected(tmp_path):
+    """Pre-1900 in a modern auction feed is a parse error, not a historical sale."""
+    row = ROW.replace("1/04/2017", "30/12/1887")
+    result = load_csv(write_csv(tmp_path, HEADER, row), tmp_path / "out", today=dt.date(2018, 10, 13))
+    assert reject_rows(result)[0]["reason"] == "date_implausible"
+
+
+def test_an_old_but_plausible_event_date_is_kept(tmp_path):
+    """1980 is unusual for this feed but not impossible — keep it and let the gate flag the shift."""
+    row = ROW.replace("1/04/2017", "30/12/1980")
+    result = load_csv(write_csv(tmp_path, HEADER, row), tmp_path / "out", today=dt.date(2018, 10, 13))
+    assert landing_rows(result)[0]["date"] == dt.date(1980, 12, 30)
+    assert result.receipt["rows_rejected"] == 0
+
+
+def test_the_receipt_records_the_event_date_span(tmp_path):
+    """So a feed that suddenly reaches back forty years is visible, not silent."""
+    rows = [
+        ROW.replace("1/04/2017", "1/04/2016"),
+        ROW.replace("49 Lithgow St", "50 Lithgow St").replace("1/04/2017", "13/10/2018"),
+    ]
+    result = load_csv(write_csv(tmp_path, HEADER, *rows), tmp_path / "out", today=dt.date(2020, 1, 1))
+    assert result.receipt["event_date_min"] == "2016-04-01"
+    assert result.receipt["event_date_max"] == "2018-10-13"
+
+
+def test_the_event_date_span_is_null_when_nothing_loaded(tmp_path):
+    result = load_csv(write_csv(tmp_path, HEADER), tmp_path / "out")
+    assert result.receipt["event_date_min"] is None
+    assert result.receipt["event_date_max"] is None
+
+
 # --------------------------------------------------------------------------- rejects
 
 

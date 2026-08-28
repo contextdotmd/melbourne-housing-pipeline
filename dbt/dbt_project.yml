@@ -27,6 +27,12 @@ vars:
   # days; the next is 14, then 49 - so this boundary sits in empty space (ADR-0006).
   recapture_window_days: 21
 
+  # The reprocessing window a future incremental build would use (docs/incremental-design.md).
+  # Declared and asserted now, while the pipeline is still full-refresh, so the number is
+  # known to be safe before anything depends on it. assert_no_cluster_exceeds_lookback.sql
+  # fails the build if any dedup cluster ever grows past it.
+  incremental_lookback_days: 90
+
 models:
   melbourne_housing_pipeline:
     staging:

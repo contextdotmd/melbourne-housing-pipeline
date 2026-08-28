@@ -2,7 +2,7 @@
 
 An end-to-end pipeline over `MELBOURNE_HOUSE_PRICES_LESS.csv`: ingestion with row-level error
 handling, a dbt star schema, four analytics models, and an Airflow DAG with a data-quality
-gate. Built test-first — 178 tests, no warnings.
+gate. Built test-first — 184 tests, no warnings.
 
 ```bash
 make setup && make all
@@ -264,15 +264,15 @@ who disagrees can see exactly what it affected.
 
 ## Testing
 
-178 tests, zero warnings, and a clean rebuild takes about 11 seconds. **No test is set to `warn`
+184 tests, zero warnings, and a clean rebuild takes about 11 seconds. **No test is set to `warn`
 severity** — a test tuned to be quiet is worse than no test.
 
 | Kind | Count | Runs against |
 |---|---|---|
-| pytest — loader, quality gate | 37 | fixtures |
+| pytest — loader, quality gate | 42 | fixtures |
 | pytest — Airflow DAG structure | 9 | the DAG file |
 | dbt unit tests | 41 | mocked rows, no warehouse data |
-| dbt data tests | 91 | the built warehouse |
+| dbt data tests | 92 | the built warehouse |
 
 Written test-first for everything with real logic; dimensions and passthrough columns are
 contract-tested instead ([ADR-0007](docs/adr/0007-tdd-the-logic-contract-test-the-plumbing.md)).
@@ -315,6 +315,17 @@ Two are explicit regression guards against mistakes that are invisible once made
   puts days-on-market, reserve gap, bid depth and buyer behaviour out of reach — a limitation
   of the source, not of the model. See
   [the conceptual model](docs/data-model.md#conceptual-model--the-business-not-the-file).
+
+### Partitioning, clustering and very old records
+
+Partition the fact by `DATE_TRUNC(event_date, MONTH)` and cluster by
+`suburb_key, property_key`. **Monthly, not daily** — BigQuery caps a table at 4,000 partitions,
+which daily granularity exhausts after about 11 years.
+
+The non-obvious trap: reprocessing is scoped by *property* but the table is partitioned by
+*event_date*, so an incremental delete keyed on `property_key` cannot prune and would scan every
+partition — including a 1980 one — on every run. Worked through, with the bound that fixes it,
+in [docs/warehouse-physical-design.md](docs/warehouse-physical-design.md).
 
 ### Porting to a cloud warehouse
 

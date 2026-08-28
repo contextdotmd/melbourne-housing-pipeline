@@ -55,6 +55,11 @@ DATE_FORMAT = "%d/%m/%Y"
 
 _POSTCODE = re.compile(r"^\d{3,4}$")
 
+#: Anything earlier than this in a modern auction feed is a parse error, not a historical
+#: sale. Kept deliberately loose: an unusually old but possible date is loaded and surfaced
+#: through the receipt's date span, rather than silently discarded.
+EARLIEST_PLAUSIBLE_EVENT_DATE = dt.date(1900, 1, 1)
+
 # Landing keeps the source's columns and their order, lowercased. Renaming to domain
 # vocabulary is staging's job (see CONTEXT.md); landing stays a faithful typed copy.
 _LANDING_SCHEMA = pa.schema(
@@ -110,8 +115,20 @@ class _RowRejected(Exception):
         self.reason = reason
 
 
-def load_csv(source: Path, out_root: Path, *, chunk_size: int = 50_000) -> LoadResult:
-    """Load ``source`` into a Parquet landing zone rooted at ``out_root``."""
+def load_csv(
+    source: Path,
+    out_root: Path,
+    *,
+    chunk_size: int = 50_000,
+    today: dt.date | None = None,
+) -> LoadResult:
+    """Load ``source`` into a Parquet landing zone rooted at ``out_root``.
+
+    ``today`` bounds plausible event dates and is injectable so the loader stays
+    deterministic under test — a clock read inside the function would make the reject
+    classification depend on when the suite happened to run.
+    """
+    today = today or dt.date.today()
     source = Path(source)
     out_root = Path(out_root)
     started = dt.datetime.now(dt.timezone.utc)
@@ -130,6 +147,8 @@ def load_csv(source: Path, out_root: Path, *, chunk_size: int = 50_000) -> LoadR
     rows_read = 0
     rows_loaded = 0
     reasons: Counter[str] = Counter()
+    event_date_min: dt.date | None = None
+    event_date_max: dt.date | None = None
 
     with source.open("r", encoding="utf-8-sig", newline="") as handle:
         reader = csv.reader(handle)
@@ -146,8 +165,14 @@ def load_csv(source: Path, out_root: Path, *, chunk_size: int = 50_000) -> LoadR
                     continue
                 rows_read += 1
                 try:
-                    accepted.append(_coerce(fields, load_id, source_row))
+                    row = _coerce(fields, load_id, source_row, today)
+                    accepted.append(row)
                     rows_loaded += 1
+                    event_date = row["date"]
+                    if event_date_min is None or event_date < event_date_min:
+                        event_date_min = event_date
+                    if event_date_max is None or event_date > event_date_max:
+                        event_date_max = event_date
                 except _RowRejected as rejection:
                     reasons[rejection.reason] += 1
                     rejected.append(
@@ -179,6 +204,8 @@ def load_csv(source: Path, out_root: Path, *, chunk_size: int = 50_000) -> LoadR
         "rows_loaded": rows_loaded,
         "rows_rejected": rows_read - rows_loaded,
         "reject_reasons": dict(sorted(reasons.items())),
+        "event_date_min": event_date_min.isoformat() if event_date_min else None,
+        "event_date_max": event_date_max.isoformat() if event_date_max else None,
         "landing_path": str(landing_path),
         "rejects_path": str(rejects_path),
         "started_at": _iso(started),
@@ -216,7 +243,7 @@ def _assert_header(header: list[str] | None) -> None:
     raise SchemaContractError("source header does not match the contract — " + "; ".join(problems))
 
 
-def _coerce(fields: list[str], load_id: str, source_row: int) -> dict:
+def _coerce(fields: list[str], load_id: str, source_row: int, today: dt.date) -> dict:
     if len(fields) != len(EXPECTED_COLUMNS):
         raise _RowRejected("wrong_field_count")
 
@@ -232,7 +259,7 @@ def _coerce(fields: list[str], load_id: str, source_row: int) -> dict:
         "price": _float(price, "price_not_numeric", nullable=True),
         "method": method,
         "sellerg": sellerg,
-        "date": _date(date),
+        "date": _date(date, today),
         "postcode": _postcode(postcode),
         "regionname": region,
         "propertycount": _int(count, "propertycount_not_integer"),
@@ -263,11 +290,20 @@ def _float(value: str, reason: str, *, nullable: bool) -> float | None:
         raise _RowRejected(reason) from None
 
 
-def _date(value: str) -> dt.date:
+def _date(value: str, today: dt.date) -> dt.date:
     try:
-        return dt.datetime.strptime(value, DATE_FORMAT).date()
+        parsed = dt.datetime.strptime(value, DATE_FORMAT).date()
     except ValueError:
         raise _RowRejected("date_not_parseable") from None
+
+    # A well-formed date can still be impossible. `30/12/2087` parses cleanly and would
+    # otherwise sail through typing untouched, landing decades of empty partitions in the
+    # date spine and quietly widening every time series.
+    if parsed > today:
+        raise _RowRejected("date_in_future")
+    if parsed < EARLIEST_PLAUSIBLE_EVENT_DATE:
+        raise _RowRejected("date_implausible")
+    return parsed
 
 
 def _postcode(value: str) -> str:
