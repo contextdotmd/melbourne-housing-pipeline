@@ -21,7 +21,105 @@ Question 1 is why non-sales are retained: **clearance rate is sales ÷ all outco
 filtering to sold rows destroys the denominator. Question 4 is only possible because the bid
 figure on unsold rows is preserved as a distinct measure (ADR-0005).
 
-## Entities
+## Conceptual model — the business, not the file
+
+What exists in the Melbourne residential property world, independent of any dataset. This is
+the model the warehouse is a *projection* of; the next section shows how much of it this
+source actually captures.
+
+```mermaid
+erDiagram
+    VENDOR          ||--o{ SALES_CAMPAIGN : "engages an agency to run"
+    AGENCY          ||--o{ SALES_CAMPAIGN : "is engaged for"
+    PROPERTY        ||--o{ SALES_CAMPAIGN : "is the subject of"
+    SALES_CAMPAIGN  ||--o| AUCTION_EVENT  : "may culminate in"
+    AUCTION_EVENT   ||--o{ BID            : "receives"
+    BIDDER          ||--o{ BID            : "places"
+    SALES_CAMPAIGN  ||--|| CAMPAIGN_OUTCOME : "concludes with"
+    CAMPAIGN_OUTCOME ||--o| TRANSACTION   : "may result in"
+    TRANSACTION     }o--|| BUYER          : "transfers to"
+    PROPERTY        }o--|| SUBURB         : "is located in"
+    SUBURB          }o--|| COUNCIL_AREA   : "sits within"
+    COUNCIL_AREA    }o--|| REGION         : "sits within"
+
+    SALES_CAMPAIGN {
+        date  listed_on
+        money price_guide
+        money reserve
+        int   days_on_market
+    }
+    AUCTION_EVENT {
+        datetime scheduled_at
+        money    reserve_at_auction
+    }
+    BID {
+        money amount
+        bool  is_vendor_bid
+    }
+    CAMPAIGN_OUTCOME {
+        string outcome_type "sold / passed in / withdrawn"
+        date   concluded_on
+    }
+    TRANSACTION {
+        money consideration
+        bool  price_disclosed
+        date  contract_date
+        date  settlement_date
+    }
+```
+
+**The cardinalities that matter:**
+
+- A **Property** is the subject of **0..\*** Sales Campaigns over its life — a dwelling can be
+  taken to market repeatedly, years apart.
+- A **Sales Campaign** culminates in **at most one** Auction Event. Private-treaty campaigns
+  have none, which is why "auction" is a property of the campaign rather than a given.
+- An **Auction Event** receives **0..\*** Bids — including vendor bids, placed by the
+  auctioneer on the seller's behalf rather than by a genuine bidder.
+- A **Campaign Outcome** results in **0..1** Transactions. This is the pivot of the whole
+  domain: a campaign concluding is not the same event as a property changing hands.
+- **Suburb → Council Area → Region** is a strict hierarchy, each child in exactly one parent.
+
+## What this source actually captures
+
+The CSV gives **one row per campaign outcome**. Four conceptual entities are collapsed into
+that single row, and four more are absent entirely. Naming which is which is the difference
+between a model built on the data and a model built on the business.
+
+| Conceptual entity | In this source | Consequence |
+|---|---|---|
+| **Property** | ✅ identified by suburb + address only | No title or lot ID, so identity is a string match — `1/23 Smith St` and `Unit 1, 23 Smith St` would be two properties |
+| **Suburb / Council / Region** | ✅ all three, as attributes of one row | Modelled as a flattened `dim_suburb` rather than a snowflake — the hierarchy is strict and only three levels deep |
+| **Agency** | ⚠️ one name per outcome (`SellerG`) | Co-listings are invisible; a campaign run by two agencies looks like one |
+| **Sales Campaign** | ⚠️ **collapsed** into the outcome row | No listing date, so **no days-on-market**; no price guide; no reserve |
+| **Auction Event** | ⚠️ **collapsed** — inferable from `Method` + `Date` | Cannot distinguish auction date from campaign end |
+| **Bid** | ⚠️ **collapsed** to at most one number | Only the highest or vendor bid survives, and only sometimes. This is why `Price` is overloaded |
+| **Campaign Outcome** | ✅ `Method` | The grain of our fact |
+| **Transaction** | ⚠️ **collapsed** into the same row | Contract and settlement dates are indistinguishable; `price_disclosed` survives as a derived flag |
+| **Vendor** | ❌ absent | No repeat-vendor analysis, no held-duration by owner |
+| **Buyer** | ❌ absent | No purchaser behaviour, no investor-vs-owner-occupier split |
+| **Bidder** | ❌ absent | Bid counts, competition depth and clearance dynamics are unavailable |
+| **Reserve** | ❌ absent | `PI` tells us the reserve was not met but never by how much — which is precisely the gap `analytics_vendor_expectation_gap` estimates indirectly, using a later sale as a proxy for true market value |
+
+### Why the fact is one row, not four tables
+
+A faithful transactional model would separate Campaign, Auction Event, Bid and Transaction.
+The source cannot support that: it provides no campaign start, no bid-level detail, no
+settlement date, and no key that would let those tables be joined back together.
+
+Modelling them separately anyway would produce four tables in strict 1:1 with each other,
+each one row per source row — the appearance of normalisation with none of its substance, and
+four joins to answer any question. So they are collapsed into a single fact at the grain the
+source actually supports, and the entity that gives the fact its name is the one the source
+genuinely records: the **campaign outcome**.
+
+**What this costs, stated plainly:** days-on-market, reserve gap, bid depth, vendor and buyer
+behaviour are all out of reach — not because of a modelling choice, but because the source
+never carried them. If a future feed adds listing dates or bid records, the fact splits into
+Campaign and Auction Event, and the grain changes. That is the most likely reason this model
+would need to change.
+
+## Warehouse model — entities as built
 
 | Entity | Grain — one row per… | Count | Type |
 |---|---|---|---|
@@ -42,7 +140,7 @@ deterministic across rebuilds.
 
 Fact and quarantine counts are measured, not estimated: 59,821 + 3,202 = 63,023.
 
-## Relationships
+### Physical relationships
 
 ```mermaid
 erDiagram

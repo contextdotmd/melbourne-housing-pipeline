@@ -295,6 +295,12 @@ Two are explicit regression guards against mistakes that are invisible once made
 - **`dim_date` is generated from the data's own range**, so it cannot describe future dates.
 - **Suburb attributes are asserted, not guaranteed.** They hold with zero violations here; a
   test fails the build if that ever stops being true.
+- **Four business entities are collapsed into one row, and four more are absent.** The source
+  gives one row per campaign outcome, so Sales Campaign, Auction Event, Bid and Transaction
+  cannot be separated, and Vendor, Buyer, Bidder and Reserve are not captured at all. That
+  puts days-on-market, reserve gap, bid depth and buyer behaviour out of reach — a limitation
+  of the source, not of the model. See
+  [the conceptual model](docs/data-model.md#conceptual-model--the-business-not-the-file).
 
 ### Porting to a cloud warehouse
 
