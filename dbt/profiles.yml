@@ -1,0 +1,11 @@
+# Paths are relative to the repo root: dbt is always invoked from there with
+#   dbt --project-dir dbt --profiles-dir dbt
+# DuckDB resolves relative paths against the process working directory, so keeping
+# a single invocation point avoids two different notions of "relative".
+melbourne_housing_pipeline:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: "{{ env_var('DUCKDB_PATH', 'data/warehouse.duckdb') }}"
+      threads: 4

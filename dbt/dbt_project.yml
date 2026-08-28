@@ -1,0 +1,31 @@
+name: melbourne_housing_pipeline
+version: 1.0.0
+config-version: 2
+profile: melbourne_housing_pipeline
+
+model-paths: ["models"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+test-paths: ["tests"]
+target-path: "target"
+clean-targets: ["target", "dbt_packages"]
+
+models:
+  melbourne_housing_pipeline:
+    staging:
+      +schema: staging
+      +materialized: view
+    intermediate:
+      +schema: intermediate
+      +materialized: table
+    marts:
+      +schema: marts
+      +materialized: table
+    analytics:
+      +schema: analytics
+      +materialized: view
+
+seeds:
+  melbourne_housing_pipeline:
+    +schema: seed
+    +quote_columns: false

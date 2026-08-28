@@ -1,0 +1,26 @@
+version: 2
+
+seeds:
+  - name: seed_sale_method
+    description: >
+      Reference data for the source Method codes. `is_sold` is the authoritative definition of
+      whether an outcome transacted and is deliberately declarative here rather than buried in
+      SQL — it is the single rule the whole model depends on (ADR-0004). `is_auction` marks
+      campaigns that went under the hammer; sold-prior (SP, PN) and withdrawn (W) did not.
+      Note that whether a price was *disclosed* is NOT derivable from the code and so is not
+      recorded here — see `price_is_disclosed` on the fact.
+    columns:
+      - name: method_code
+        tests: [not_null, unique]
+      - name: is_sold
+        tests: [not_null]
+      - name: is_auction
+        tests: [not_null]
+
+  - name: seed_property_type
+    description: >
+      Reference data for the source Type codes. Only h, u and t occur in this extract; the
+      remaining codes are carried so the dimension stays complete if the source widens.
+    columns:
+      - name: type_code
+        tests: [not_null, unique]

@@ -1,0 +1,13 @@
+version: 2
+
+sources:
+  - name: landing
+    description: >
+      Parquet written by src/ingest/loader.py — a typed, contract-checked copy of the source
+      CSV with source column names lowercased and nothing else changed. Row-for-row identical
+      to the rows the loader accepted, which is what lets the row ledger reconcile.
+    meta:
+      external_location: "read_parquet('data/landing/listing_outcome/*/*.parquet')"
+    tables:
+      - name: listing_outcome
+        description: One row per listing outcome as it appeared in the source file.

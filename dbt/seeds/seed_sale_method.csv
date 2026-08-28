@@ -1,0 +1,11 @@
+method_code,method_description,is_sold,is_auction
+S,Property sold,true,true
+SP,Property sold prior,true,false
+PI,Property passed in,false,true
+PN,Sold prior not disclosed,true,false
+SN,Sold not disclosed,true,true
+NB,No bid,false,true
+VB,Vendor bid,false,true
+W,Withdrawn prior to auction,false,false
+SA,Sold after auction,true,true
+SS,Sold after auction price not disclosed,true,true

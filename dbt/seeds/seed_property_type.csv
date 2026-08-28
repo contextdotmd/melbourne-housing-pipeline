@@ -1,0 +1,7 @@
+type_code,type_description
+h,House / cottage / villa / semi / terrace
+u,Unit / duplex
+t,Townhouse
+br,Bedroom(s)
+dev site,Development site
+o res,Other residential

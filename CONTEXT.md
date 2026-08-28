@@ -67,7 +67,7 @@ _Avoid_: house, address, dwelling
 
 **Suburb**:
 The geographic grain of this dataset. Determines postcode, region, council area, **CBD
-Distance** and **Property Count** — all five hold with zero exceptions across 380 suburbs.
+Distance** and **Property Count** — all five hold with zero exceptions across the 377 suburbs.
 _Avoid_: location, area, locality
 
 **CBD Distance**:
@@ -144,3 +144,13 @@ _Avoid_: sale date, auction day
 - **"rejects"** vs **"quarantine"** — resolved: **rejects** are rows the loader could not
   parse (a contract failure); **Quarantine** holds rows that parsed cleanly but were excluded
   by a modelling rule.
+- **Counting spellings vs counting entities** — the source holds 380 suburb spellings and 476
+  agent spellings, but case variants (`Croydon`/`croydon`, `MacLeod`/`Macleod`,
+  `Viewbank`/`viewbank`; `VICPROP`/`VICProp`/`Vicprop`, `LITTLE`/`Little`) mean there are
+  **377 Suburbs** and **470 Agents**. Resolved: dimensions key on the lowercased value and
+  choose the display spelling by frequency. Left unnormalised each variant becomes its own
+  dimension member, quietly splitting that suburb's or agent's numbers in two.
+- **"property characteristics"** — `Rooms` and `Type` read like attributes of a **Property**,
+  but they differ between outcomes for 112 and 72 properties respectively. Resolved: they are
+  recorded as at the **Listing Outcome**, not as facts about the dwelling. See
+  [docs/data-model.md](docs/data-model.md).
