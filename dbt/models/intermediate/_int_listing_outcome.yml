@@ -1,0 +1,139 @@
+version: 2
+
+models:
+  - name: int__listing_outcome
+    description: >
+      Staging rows with meaning derived: whether the outcome was a sale, and which of the two
+      possible meanings the source price carries. Still row-preserving — the recapture collapse
+      is a separate model so that a failing test localises to one rule.
+
+      `sale_price` and `bid_amount` are mutually exclusive by construction (ADR-0005). There is
+      deliberately no column that mixes them, because 10,964 rows carry a bid on a property
+      that did not sell, and averaging those together with real transactions produces a
+      plausible wrong number rather than a null.
+    columns:
+      - name: is_sold
+        description: From seed_sale_method — the authoritative definition of a transaction.
+        tests: [not_null]
+      - name: sale_price
+        description: Consideration paid. Null unless the outcome is a sale AND the price was disclosed.
+      - name: bid_amount
+        description: Highest or vendor bid. Null unless the outcome is NOT a sale.
+      - name: sale_price_is_disclosed
+        description: >
+          True only for a sale with a published price. Named for what it means: for a non-sale
+          there is no sale price to disclose, so it is false rather than null.
+        tests: [not_null]
+    data_tests:
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "not (sale_price is not null and bid_amount is not null)"
+            config:
+              alias: int_listing_outcome_measures_are_mutually_exclusive
+
+unit_tests:
+  - name: a_sale_with_a_disclosed_price_populates_sale_price_only
+    model: int__listing_outcome
+    given:
+      - input: ref('stg__listing_outcome')
+        rows:
+          - {method_code: "S", reported_price: 1490000}
+      - input: ref('seed_sale_method')
+        rows:
+          - {method_code: "S", is_sold: true, is_auction: true}
+    expect:
+      rows:
+        - {is_sold: true, sale_price: 1490000, bid_amount: , sale_price_is_disclosed: true}
+
+  - name: a_passed_in_property_populates_bid_amount_not_sale_price
+    description: >
+      The single most consequential rule in the model. PI means the property did not sell, so
+      the recorded figure is the highest bid. Treated as a sale price it silently contaminates
+      every average by roughly 23%.
+    model: int__listing_outcome
+    given:
+      - input: ref('stg__listing_outcome')
+        rows:
+          - {method_code: "PI", reported_price: 2700000}
+      - input: ref('seed_sale_method')
+        rows:
+          - {method_code: "PI", is_sold: false, is_auction: true}
+    expect:
+      rows:
+        - {is_sold: false, sale_price: , bid_amount: 2700000, sale_price_is_disclosed: false}
+
+  - name: a_vendor_bid_populates_bid_amount_not_sale_price
+    model: int__listing_outcome
+    given:
+      - input: ref('stg__listing_outcome')
+        rows:
+          - {method_code: "VB", reported_price: 790000}
+      - input: ref('seed_sale_method')
+        rows:
+          - {method_code: "VB", is_sold: false, is_auction: true}
+    expect:
+      rows:
+        - {is_sold: false, sale_price: , bid_amount: 790000, sale_price_is_disclosed: false}
+
+  - name: an_undisclosed_sale_is_still_a_sale
+    description: >
+      SN is sold-not-disclosed: 2,674 rows. Dropping these would understate volume and break
+      clearance rate; treating the null price as zero would wreck every average.
+    model: int__listing_outcome
+    given:
+      - input: ref('stg__listing_outcome')
+        rows:
+          - {method_code: "SN", reported_price: }
+      - input: ref('seed_sale_method')
+        rows:
+          - {method_code: "SN", is_sold: true, is_auction: true}
+    expect:
+      rows:
+        - {is_sold: true, sale_price: , bid_amount: , sale_price_is_disclosed: false}
+
+  - name: a_sold_row_with_no_price_is_sold_but_undisclosed
+    description: >
+      Disclosure is not a function of the method code — 10.1% of plain S rows have no price.
+      That is why sale_price_is_disclosed lives on the fact and not on dim_sale_method.
+    model: int__listing_outcome
+    given:
+      - input: ref('stg__listing_outcome')
+        rows:
+          - {method_code: "S", reported_price: }
+      - input: ref('seed_sale_method')
+        rows:
+          - {method_code: "S", is_sold: true, is_auction: true}
+    expect:
+      rows:
+        - {is_sold: true, sale_price: , bid_amount: , sale_price_is_disclosed: false}
+
+  - name: a_withdrawn_listing_has_neither_measure
+    model: int__listing_outcome
+    given:
+      - input: ref('stg__listing_outcome')
+        rows:
+          - {method_code: "W", reported_price: }
+      - input: ref('seed_sale_method')
+        rows:
+          - {method_code: "W", is_sold: false, is_auction: false}
+    expect:
+      rows:
+        - {is_sold: false, sale_price: , bid_amount: , sale_price_is_disclosed: false}
+
+  - name: derivation_is_row_preserving
+    model: int__listing_outcome
+    given:
+      - input: ref('stg__listing_outcome')
+        rows:
+          - {method_code: "S", reported_price: 100}
+          - {method_code: "S", reported_price: 100}
+          - {method_code: "PI", reported_price: 200}
+      - input: ref('seed_sale_method')
+        rows:
+          - {method_code: "S", is_sold: true, is_auction: true}
+          - {method_code: "PI", is_sold: false, is_auction: true}
+    expect:
+      rows:
+        - {sale_price: 100, bid_amount: }
+        - {sale_price: 100, bid_amount: }
+        - {sale_price: , bid_amount: 200}
