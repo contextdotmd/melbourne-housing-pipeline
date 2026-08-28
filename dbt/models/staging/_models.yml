@@ -1,0 +1,122 @@
+version: 2
+
+models:
+  - name: stg__listing_outcome
+    description: >
+      Landing rows with domain vocabulary applied and values normalised. Deliberately
+      row-preserving — one row in, one row out — so the row ledger anchors here and every
+      later drop must be matched by a quarantine row (ADR-0009). No derivation, no
+      cardinality change: those belong to the intermediate layer.
+
+      Both a key and a display form are emitted for suburb, address and agent. Keys are
+      lowercased because the source contains case variants of the same entity; display
+      spellings are resolved in the dimensions by frequency.
+    columns:
+      - name: suburb_key
+        description: Lowercased suburb, used for joining and surrogate keys.
+        tests: [not_null]
+      - name: suburb_name
+        description: Suburb as spelled in this row. May differ in case between rows.
+        tests: [not_null]
+      - name: street_address_key
+        description: Lowercased street address. Not unique on its own — see property_key.
+        tests: [not_null]
+      - name: method_code
+        description: Uppercased source Method code.
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('seed_sale_method')
+                field: method_code
+      - name: type_code
+        description: Lowercased source Type code.
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('seed_property_type')
+                field: type_code
+      - name: event_date
+        tests: [not_null]
+      - name: agent_key
+        tests: [not_null]
+      - name: postcode
+        tests: [not_null]
+
+unit_tests:
+  - name: suburb_case_variants_share_one_key_but_keep_their_own_display
+    description: >
+      Croydon and croydon are one suburb. If the key were case-sensitive each spelling would
+      become its own dimension member and split that suburb's numbers in two.
+    model: stg__listing_outcome
+    given:
+      - input: source('landing', 'listing_outcome')
+        rows:
+          - {suburb: "Croydon", sellerg: "Jellis", address: "1 High St", method: "S", type: "h", postcode: "3136"}
+          - {suburb: "croydon", sellerg: "Jellis", address: "1 High St", method: "S", type: "h", postcode: "3136"}
+    expect:
+      rows:
+        - {suburb_key: "croydon", suburb_name: "Croydon"}
+        - {suburb_key: "croydon", suburb_name: "croydon"}
+
+  - name: agent_case_variants_share_one_key
+    model: stg__listing_outcome
+    given:
+      - input: source('landing', 'listing_outcome')
+        rows:
+          - {suburb: "Kew", sellerg: "VICPROP", address: "2 Bay Rd", method: "S", type: "h", postcode: "3101"}
+          - {suburb: "Kew", sellerg: "VICProp", address: "2 Bay Rd", method: "S", type: "h", postcode: "3101"}
+          - {suburb: "Kew", sellerg: "Vicprop", address: "2 Bay Rd", method: "S", type: "h", postcode: "3101"}
+    expect:
+      rows:
+        - {agent_key: "vicprop", agent_name: "VICPROP"}
+        - {agent_key: "vicprop", agent_name: "VICProp"}
+        - {agent_key: "vicprop", agent_name: "Vicprop"}
+
+  - name: codes_are_case_folded_to_a_canonical_form
+    description: Method codes fold up, type codes fold down — matching how the source writes them.
+    model: stg__listing_outcome
+    given:
+      - input: source('landing', 'listing_outcome')
+        rows:
+          - {suburb: "Kew", sellerg: "Jellis", address: "2 Bay Rd", method: "s", type: "H", postcode: "3101"}
+          - {suburb: "Kew", sellerg: "Jellis", address: "3 Bay Rd", method: "PI", type: "u", postcode: "3101"}
+    expect:
+      rows:
+        - {method_code: "S", type_code: "h"}
+        - {method_code: "PI", type_code: "u"}
+
+  - name: null_price_survives_staging_untouched
+    description: >
+      23% of the source has no price. Defaulting it to zero here would be invisible and would
+      drag every downstream average toward zero.
+    model: stg__listing_outcome
+    given:
+      - input: source('landing', 'listing_outcome')
+        rows:
+          - {suburb: "Kew", sellerg: "Jellis", address: "2 Bay Rd", method: "S", type: "h", postcode: "3101", price: 1490000}
+          - {suburb: "Kew", sellerg: "Jellis", address: "3 Bay Rd", method: "PI", type: "h", postcode: "3101", price: }
+    expect:
+      rows:
+        - {price: 1490000}
+        - {price: }
+
+  - name: staging_is_row_preserving
+    description: >
+      The row ledger anchors on this. Four rows in, four rows out, including two that are
+      byte-identical — deduplication is the intermediate layer's job, not staging's.
+    model: stg__listing_outcome
+    given:
+      - input: source('landing', 'listing_outcome')
+        rows:
+          - {suburb: "Kew", sellerg: "Jellis", address: "2 Bay Rd", method: "S", type: "h", postcode: "3101"}
+          - {suburb: "Kew", sellerg: "Jellis", address: "2 Bay Rd", method: "S", type: "h", postcode: "3101"}
+          - {suburb: "Kew", sellerg: "Nelson", address: "3 Bay Rd", method: "PI", type: "u", postcode: "3101"}
+          - {suburb: "Ivanhoe", sellerg: "Miles", address: "9 Elm St", method: "W", type: "t", postcode: "3079"}
+    expect:
+      rows:
+        - {street_address_key: "2 bay rd", agent_key: "jellis"}
+        - {street_address_key: "2 bay rd", agent_key: "jellis"}
+        - {street_address_key: "3 bay rd", agent_key: "nelson"}
+        - {street_address_key: "9 elm st", agent_key: "miles"}
