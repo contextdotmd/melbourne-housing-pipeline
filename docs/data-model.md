@@ -32,12 +32,15 @@ figure on unsold rows is preserved as a distinct measure (ADR-0005).
 | **Date** | calendar day across the observed range | ~1,000 | dimension (generated spine) |
 | **Sale method** | source `Method` code | 10 | dimension (seed) |
 | **Property type** | source `Type` code | 6 | dimension (seed) |
-| **Recaptured listing** | row excluded as a republished snapshot | 3,222 | quarantine |
+| **Recaptured listing** | row excluded as a republished snapshot | 3,202 | quarantine |
 
 Suburb and agent counts are **entity** counts, not distinct-string counts. The source contains
 380 suburb spellings and 476 agent spellings; case variants (`Croydon`/`croydon`,
 `VICPROP`/`VICProp`/`Vicprop`) collapse these to 377 and 470. Dimensions key on the lowercased
-value and choose the display spelling by frequency.
+value and choose the display spelling by frequency, tie-broken alphabetically so the choice is
+deterministic across rebuilds.
+
+Fact and quarantine counts are measured, not estimated: 59,821 + 3,202 = 63,023.
 
 ## Relationships
 
@@ -98,7 +101,7 @@ erDiagram
         int rooms "point-in-time"
         double sale_price "null unless sold AND disclosed"
         double bid_amount "null unless NOT sold"
-        bool price_is_disclosed
+        bool sale_price_is_disclosed
     }
     QUARANTINE_RECAPTURED_LISTING {
         string quarantine_key PK

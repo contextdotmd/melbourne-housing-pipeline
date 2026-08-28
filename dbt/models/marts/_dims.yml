@@ -1,0 +1,205 @@
+version: 2
+
+models:
+  - name: dim_suburb
+    description: >
+      One row per suburb, keyed on the lowercased name. Postcode, region, council, CBD distance
+      and property count are attributes of the suburb — verified across all 377 with zero
+      violations — so they live here rather than on the fact.
+
+      The display spelling is chosen by frequency because the source spells three suburbs two
+      ways. Ties break alphabetically so the choice is deterministic across rebuilds.
+    columns:
+      - name: suburb_key
+        tests: [not_null, unique]
+      - name: suburb_name
+        tests: [not_null]
+      - name: postcode
+        tests: [not_null]
+      - name: region_name
+        tests: [not_null]
+      - name: council_area
+        tests: [not_null]
+
+  - name: dim_property
+    description: >
+      One row per dwelling, identified by suburb plus street address. Identity only: `rooms`
+      and `type` differ between outcomes for 112 and 72 properties respectively, so they are
+      recorded as at the outcome rather than as facts about the dwelling.
+    columns:
+      - name: property_key
+        tests: [not_null, unique]
+      - name: suburb_key
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_suburb')
+                field: suburb_key
+
+  - name: dim_agent
+    description: One row per selling agency, keyed on the lowercased name.
+    columns:
+      - name: agent_key
+        tests: [not_null, unique]
+      - name: agent_name
+        tests: [not_null]
+
+  - name: dim_date
+    description: >
+      A generated calendar spine covering every day in the observed range — deliberately NOT
+      the distinct dates present in the data. Only 112 days carry activity, so a
+      DISTINCT-derived date dimension would omit quiet months entirely and `LAG` would compare
+      non-adjacent months while looking perfectly correct.
+    columns:
+      - name: date_day
+        tests: [not_null, unique]
+      - name: month_start
+        tests: [not_null]
+      - name: is_saturday
+        description: 91% of listing outcomes fall on a Saturday — this market runs on auctions.
+        tests: [not_null]
+
+  - name: dim_sale_method
+    description: The source Method codes, with is_sold as the authoritative transaction rule.
+    columns:
+      - name: method_code
+        tests: [not_null, unique]
+      - name: is_sold
+        tests: [not_null]
+
+  - name: dim_property_type
+    description: The source Type codes.
+    columns:
+      - name: type_code
+        tests: [not_null, unique]
+
+unit_tests:
+  - name: suburb_display_name_is_the_most_frequent_spelling
+    description: >
+      Croydon appears 330 times and croydon once. Both must collapse to one dimension member,
+      and the member must carry the spelling a reader expects.
+    model: dim_suburb
+    given:
+      - input: ref('int__listing_outcome_deduped')
+        rows:
+          - {suburb_key: croydon, suburb_name: "Croydon", postcode: "3136", region_name: "Eastern Metropolitan", council_area: "Maroondah City Council", cbd_distance_km: 25.0, property_count: 6338}
+          - {suburb_key: croydon, suburb_name: "Croydon", postcode: "3136", region_name: "Eastern Metropolitan", council_area: "Maroondah City Council", cbd_distance_km: 25.0, property_count: 6338}
+          - {suburb_key: croydon, suburb_name: "croydon", postcode: "3136", region_name: "Eastern Metropolitan", council_area: "Maroondah City Council", cbd_distance_km: 25.0, property_count: 6338}
+    expect:
+      rows:
+        - {suburb_key: croydon, suburb_name: "Croydon", postcode: "3136"}
+
+  - name: suburb_display_name_ties_break_alphabetically
+    description: >
+      Without a tie-break the winner is whichever row the engine happens to reach first, so
+      the dimension would change between rebuilds for no reason.
+    model: dim_suburb
+    given:
+      - input: ref('int__listing_outcome_deduped')
+        rows:
+          - {suburb_key: macleod, suburb_name: "MacLeod", postcode: "3085", region_name: "Northern Metropolitan", council_area: "Banyule City Council", cbd_distance_km: 12.1, property_count: 2321}
+          - {suburb_key: macleod, suburb_name: "Macleod", postcode: "3085", region_name: "Northern Metropolitan", council_area: "Banyule City Council", cbd_distance_km: 12.1, property_count: 2321}
+    expect:
+      rows:
+        - {suburb_key: macleod, suburb_name: "MacLeod"}
+
+  - name: agent_display_name_is_the_most_frequent_spelling
+    model: dim_agent
+    given:
+      - input: ref('int__listing_outcome_deduped')
+        rows:
+          - {agent_key: vicprop, agent_name: "VICPROP"}
+          - {agent_key: vicprop, agent_name: "VICPROP"}
+          - {agent_key: vicprop, agent_name: "VICProp"}
+          - {agent_key: vicprop, agent_name: "Vicprop"}
+    expect:
+      rows:
+        - {agent_key: vicprop, agent_name: "VICPROP"}
+
+  - name: a_street_address_in_two_suburbs_is_two_properties
+    description: >
+      "14 Moray St" occurs in seven suburbs. Keyed on address alone they would merge into one
+      dwelling and their sale histories would be spliced together.
+    model: dim_property
+    given:
+      - input: ref('int__listing_outcome_deduped')
+        rows:
+          - {suburb_key: "south melbourne", street_address_key: "14 moray st", street_address: "14 Moray St"}
+          - {suburb_key: "new gisborne", street_address_key: "14 moray st", street_address: "14 Moray St"}
+    expect:
+      rows:
+        - {suburb_key: "south melbourne", street_address: "14 Moray St"}
+        - {suburb_key: "new gisborne", street_address: "14 Moray St"}
+
+  - name: date_spine_fills_days_with_no_activity
+    description: >
+      The whole point of a generated spine. Two outcomes a month apart must still produce a
+      contiguous run of days between them.
+    model: dim_date
+    given:
+      - input: ref('int__listing_outcome_deduped')
+        rows:
+          - {event_date: "2017-01-30"}
+          - {event_date: "2017-02-02"}
+    expect:
+      rows:
+        - {date_day: "2017-01-01", month_start: "2017-01-01", is_saturday: false}
+        - {date_day: "2017-01-02", month_start: "2017-01-01", is_saturday: false}
+        - {date_day: "2017-01-03", month_start: "2017-01-01", is_saturday: false}
+        - {date_day: "2017-01-04", month_start: "2017-01-01", is_saturday: false}
+        - {date_day: "2017-01-05", month_start: "2017-01-01", is_saturday: false}
+        - {date_day: "2017-01-06", month_start: "2017-01-01", is_saturday: false}
+        - {date_day: "2017-01-07", month_start: "2017-01-01", is_saturday: true}
+        - {date_day: "2017-01-08", month_start: "2017-01-01", is_saturday: false}
+        - {date_day: "2017-01-09", month_start: "2017-01-01", is_saturday: false}
+        - {date_day: "2017-01-10", month_start: "2017-01-01", is_saturday: false}
+        - {date_day: "2017-01-11", month_start: "2017-01-01", is_saturday: false}
+        - {date_day: "2017-01-12", month_start: "2017-01-01", is_saturday: false}
+        - {date_day: "2017-01-13", month_start: "2017-01-01", is_saturday: false}
+        - {date_day: "2017-01-14", month_start: "2017-01-01", is_saturday: true}
+        - {date_day: "2017-01-15", month_start: "2017-01-01", is_saturday: false}
+        - {date_day: "2017-01-16", month_start: "2017-01-01", is_saturday: false}
+        - {date_day: "2017-01-17", month_start: "2017-01-01", is_saturday: false}
+        - {date_day: "2017-01-18", month_start: "2017-01-01", is_saturday: false}
+        - {date_day: "2017-01-19", month_start: "2017-01-01", is_saturday: false}
+        - {date_day: "2017-01-20", month_start: "2017-01-01", is_saturday: false}
+        - {date_day: "2017-01-21", month_start: "2017-01-01", is_saturday: true}
+        - {date_day: "2017-01-22", month_start: "2017-01-01", is_saturday: false}
+        - {date_day: "2017-01-23", month_start: "2017-01-01", is_saturday: false}
+        - {date_day: "2017-01-24", month_start: "2017-01-01", is_saturday: false}
+        - {date_day: "2017-01-25", month_start: "2017-01-01", is_saturday: false}
+        - {date_day: "2017-01-26", month_start: "2017-01-01", is_saturday: false}
+        - {date_day: "2017-01-27", month_start: "2017-01-01", is_saturday: false}
+        - {date_day: "2017-01-28", month_start: "2017-01-01", is_saturday: true}
+        - {date_day: "2017-01-29", month_start: "2017-01-01", is_saturday: false}
+        - {date_day: "2017-01-30", month_start: "2017-01-01", is_saturday: false}
+        - {date_day: "2017-01-31", month_start: "2017-01-01", is_saturday: false}
+        - {date_day: "2017-02-01", month_start: "2017-02-01", is_saturday: false}
+        - {date_day: "2017-02-02", month_start: "2017-02-01", is_saturday: false}
+        - {date_day: "2017-02-03", month_start: "2017-02-01", is_saturday: false}
+        - {date_day: "2017-02-04", month_start: "2017-02-01", is_saturday: true}
+        - {date_day: "2017-02-05", month_start: "2017-02-01", is_saturday: false}
+        - {date_day: "2017-02-06", month_start: "2017-02-01", is_saturday: false}
+        - {date_day: "2017-02-07", month_start: "2017-02-01", is_saturday: false}
+        - {date_day: "2017-02-08", month_start: "2017-02-01", is_saturday: false}
+        - {date_day: "2017-02-09", month_start: "2017-02-01", is_saturday: false}
+        - {date_day: "2017-02-10", month_start: "2017-02-01", is_saturday: false}
+        - {date_day: "2017-02-11", month_start: "2017-02-01", is_saturday: true}
+        - {date_day: "2017-02-12", month_start: "2017-02-01", is_saturday: false}
+        - {date_day: "2017-02-13", month_start: "2017-02-01", is_saturday: false}
+        - {date_day: "2017-02-14", month_start: "2017-02-01", is_saturday: false}
+        - {date_day: "2017-02-15", month_start: "2017-02-01", is_saturday: false}
+        - {date_day: "2017-02-16", month_start: "2017-02-01", is_saturday: false}
+        - {date_day: "2017-02-17", month_start: "2017-02-01", is_saturday: false}
+        - {date_day: "2017-02-18", month_start: "2017-02-01", is_saturday: true}
+        - {date_day: "2017-02-19", month_start: "2017-02-01", is_saturday: false}
+        - {date_day: "2017-02-20", month_start: "2017-02-01", is_saturday: false}
+        - {date_day: "2017-02-21", month_start: "2017-02-01", is_saturday: false}
+        - {date_day: "2017-02-22", month_start: "2017-02-01", is_saturday: false}
+        - {date_day: "2017-02-23", month_start: "2017-02-01", is_saturday: false}
+        - {date_day: "2017-02-24", month_start: "2017-02-01", is_saturday: false}
+        - {date_day: "2017-02-25", month_start: "2017-02-01", is_saturday: true}
+        - {date_day: "2017-02-26", month_start: "2017-02-01", is_saturday: false}
+        - {date_day: "2017-02-27", month_start: "2017-02-01", is_saturday: false}
+        - {date_day: "2017-02-28", month_start: "2017-02-01", is_saturday: false}
