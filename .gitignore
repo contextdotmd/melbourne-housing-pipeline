@@ -21,3 +21,4 @@ airflow/logs/
 airflow/*.cfg
 airflow/*.pid
 airflow/simple_auth_manager_passwords.json.generated
+dbt/.user.yml
