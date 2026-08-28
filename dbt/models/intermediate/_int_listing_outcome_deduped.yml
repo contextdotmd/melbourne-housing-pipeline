@@ -14,8 +14,16 @@ models:
       of one event; rows in different clusters are genuinely separate campaigns.
     columns:
       - name: recapture_rank
-        description: 1 for the earliest row in a cluster, ascending for each republication.
-        tests: [not_null]
+        description: >
+          1 for the earliest row in a cluster, ascending for each republication. Null on
+          restatements, which are resolved before the recapture chain is built.
+      - name: dq_status
+        description: ok | suspected_restatement | suspected_recapture
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["ok", "suspected_restatement", "suspected_recapture", "exact_duplicate"]
       - name: business_signature
         description: >
           Hash of every business column except the date. The artefact varies only the date, so
@@ -46,7 +54,7 @@ models:
           - not_null
           - accepted_values:
               arguments:
-                values: ["suspected_recapture"]
+                values: ["suspected_recapture", "suspected_restatement", "exact_duplicate"]
       - name: surviving_event_date
         description: The event date of the row this one was collapsed into.
         tests: [not_null]
@@ -68,11 +76,11 @@ unit_tests:
           - {suburb_key: kew, street_address_key: "1 acacia pl", rooms: 2, type_code: u, method_code: VB, agent_key: jellis, sale_price: , bid_amount: 750000, event_date: "2018-01-08", source_row: 5}
     expect:
       rows:
-        - {event_date: "2017-12-16", recapture_rank: 1, surviving_event_date: "2017-12-16"}
-        - {event_date: "2017-12-23", recapture_rank: 2, surviving_event_date: "2017-12-16"}
-        - {event_date: "2017-12-30", recapture_rank: 3, surviving_event_date: "2017-12-16"}
-        - {event_date: "2018-01-06", recapture_rank: 4, surviving_event_date: "2017-12-16"}
-        - {event_date: "2018-01-08", recapture_rank: 5, surviving_event_date: "2017-12-16"}
+        - {event_date: "2017-12-16", recapture_rank: 1, surviving_event_date: "2017-12-16", dq_status: ok}
+        - {event_date: "2017-12-23", recapture_rank: 2, surviving_event_date: "2017-12-16", dq_status: suspected_recapture}
+        - {event_date: "2017-12-30", recapture_rank: 3, surviving_event_date: "2017-12-16", dq_status: suspected_recapture}
+        - {event_date: "2018-01-06", recapture_rank: 4, surviving_event_date: "2017-12-16", dq_status: suspected_recapture}
+        - {event_date: "2018-01-08", recapture_rank: 5, surviving_event_date: "2017-12-16", dq_status: suspected_recapture}
 
   - name: a_relisting_months_later_starts_a_new_cluster
     description: >
@@ -141,8 +149,11 @@ unit_tests:
         - {event_date: "2017-04-01", recapture_rank: 1}
         - {event_date: "2017-04-08", recapture_rank: 1}
 
-  - name: byte_identical_rows_on_the_same_date_cluster
-    description: The file holds two of these. A zero-day gap is inside any window.
+  - name: byte_identical_rows_on_the_same_date_are_exact_duplicates
+    description: >
+      The file holds two of these. Same date and identical content, so it is neither a
+      restatement (nothing changed) nor a recapture (the date did not move) — it is simply
+      the same row twice, and the quarantine says so.
     model: int__listing_outcome_clustered
     given:
       - input: ref('int__listing_outcome')
@@ -151,8 +162,8 @@ unit_tests:
           - {suburb_key: kew, street_address_key: "2 bay rd", rooms: 3, type_code: h, method_code: S, agent_key: nelson, sale_price: 900000, bid_amount: , event_date: "2017-04-01", source_row: 2}
     expect:
       rows:
-        - {event_date: "2017-04-01", recapture_rank: 1}
-        - {event_date: "2017-04-01", recapture_rank: 2}
+        - {event_date: "2017-04-01", dq_status: ok}
+        - {event_date: "2017-04-01", dq_status: exact_duplicate}
 
   - name: null_prices_compare_equal_within_a_signature
     description: >
@@ -175,24 +186,91 @@ unit_tests:
     given:
       - input: ref('int__listing_outcome_clustered')
         rows:
-          - {event_date: "2017-12-16", recapture_rank: 1, is_sold: true}
-          - {event_date: "2017-12-23", recapture_rank: 2, is_sold: true}
-          - {event_date: "2017-12-30", recapture_rank: 3, is_sold: true}
-          - {event_date: "2018-03-04", recapture_rank: 1, is_sold: false}
+          - {event_date: "2017-12-16", dq_status: ok, is_sold: true}
+          - {event_date: "2017-12-23", dq_status: suspected_recapture, is_sold: true}
+          - {event_date: "2017-12-30", dq_status: suspected_recapture, is_sold: true}
+          - {event_date: "2018-01-05", dq_status: exact_duplicate, is_sold: true}
+          - {event_date: "2018-03-04", dq_status: ok, is_sold: false}
     expect:
       rows:
         - {event_date: "2017-12-16"}
         - {event_date: "2018-03-04"}
+
 
   - name: quarantine_takes_exactly_the_rows_deduped_dropped
     model: quarantine_recaptured_listing
     given:
       - input: ref('int__listing_outcome_clustered')
         rows:
-          - {event_date: "2017-12-16", recapture_rank: 1, surviving_event_date: "2017-12-16", business_signature: sig, source_row: 1}
-          - {event_date: "2017-12-23", recapture_rank: 2, surviving_event_date: "2017-12-16", business_signature: sig, source_row: 2}
-          - {event_date: "2017-12-30", recapture_rank: 3, surviving_event_date: "2017-12-16", business_signature: sig, source_row: 3}
+          - {event_date: "2017-12-16", dq_status: ok, surviving_event_date: "2017-12-16", business_signature: sig, source_row: 1}
+          - {event_date: "2017-12-23", dq_status: suspected_recapture, surviving_event_date: "2017-12-16", business_signature: sig, source_row: 2}
+          - {event_date: "2017-12-30", dq_status: suspected_recapture, surviving_event_date: "2017-12-16", business_signature: sig, source_row: 3}
+          - {event_date: "2018-02-03", dq_status: suspected_restatement, surviving_event_date: "2018-02-03", business_signature: sig2, source_row: 4}
     expect:
       rows:
         - {event_date: "2017-12-23", surviving_event_date: "2017-12-16", reason: suspected_recapture}
         - {event_date: "2017-12-30", surviving_event_date: "2017-12-16", reason: suspected_recapture}
+        - {event_date: "2018-02-03", surviving_event_date: "2018-02-03", reason: suspected_restatement}
+
+  # ---------------------------------------------------------------- restatement
+  - name: a_later_disclosed_price_is_a_restatement_not_a_second_sale
+    description: >
+      One sale, recorded twice: once before the price was published and once after. A
+      recapture varies the date and holds content constant; a restatement does the opposite,
+      so the recapture rule cannot see it. Left unhandled, every sale whose price is later
+      disclosed would be counted twice.
+    model: int__listing_outcome_clustered
+    given:
+      - input: ref('int__listing_outcome')
+        rows:
+          - {suburb_key: toorak, street_address_key: "2/9 tintern av", rooms: 2, type_code: u, method_code: SP, agent_key: marshall, sale_price: , bid_amount: , event_date: "2016-09-24", source_row: 1}
+          - {suburb_key: toorak, street_address_key: "2/9 tintern av", rooms: 2, type_code: u, method_code: SP, agent_key: marshall, sale_price: 851000, bid_amount: , event_date: "2016-09-24", source_row: 2}
+    expect:
+      rows:
+        - {event_date: "2016-09-24", sale_price: 851000, dq_status: ok}
+        - {event_date: "2016-09-24", sale_price: , dq_status: suspected_restatement}
+
+  - name: the_most_informative_row_wins_a_restatement
+    description: A disclosed price is strictly more informative than a null one, whatever the row order.
+    model: int__listing_outcome_clustered
+    given:
+      - input: ref('int__listing_outcome')
+        rows:
+          - {suburb_key: "port melbourne", street_address_key: "224 nott st", rooms: 3, type_code: h, method_code: SP, agent_key: greg, sale_price: 1405000, bid_amount: , event_date: "2016-07-30", source_row: 1}
+          - {suburb_key: "port melbourne", street_address_key: "224 nott st", rooms: 3, type_code: h, method_code: SP, agent_key: greg, sale_price: , bid_amount: , event_date: "2016-07-30", source_row: 2}
+    expect:
+      rows:
+        - {event_date: "2016-07-30", sale_price: 1405000, dq_status: ok}
+        - {event_date: "2016-07-30", sale_price: , dq_status: suspected_restatement}
+
+  - name: two_genuinely_different_prices_on_one_day_still_collapse
+    description: >
+      The same property cannot be sold twice by the same agent on the same day under the same
+      method. Whatever the two figures mean, they describe one event.
+    model: int__listing_outcome_clustered
+    given:
+      - input: ref('int__listing_outcome')
+        rows:
+          - {suburb_key: kew, street_address_key: "2 bay rd", rooms: 3, type_code: h, method_code: S, agent_key: nelson, sale_price: 900000, bid_amount: , event_date: "2017-04-01", source_row: 1}
+          - {suburb_key: kew, street_address_key: "2 bay rd", rooms: 3, type_code: h, method_code: S, agent_key: nelson, sale_price: 910000, bid_amount: , event_date: "2017-04-01", source_row: 2}
+    expect:
+      rows:
+        - {event_date: "2017-04-01", sale_price: 900000, dq_status: ok}
+        - {event_date: "2017-04-01", sale_price: 910000, dq_status: suspected_restatement}
+
+  - name: a_restatement_does_not_pollute_the_recapture_chain
+    description: >
+      A duplicate on day one must not become the lag anchor for the following week, or the
+      recapture gap would be measured from the wrong row.
+    model: int__listing_outcome_clustered
+    given:
+      - input: ref('int__listing_outcome')
+        rows:
+          - {suburb_key: kew, street_address_key: "1 acacia pl", rooms: 2, type_code: u, method_code: VB, agent_key: jellis, sale_price: , bid_amount: 750000, event_date: "2017-12-16", source_row: 1}
+          - {suburb_key: kew, street_address_key: "1 acacia pl", rooms: 2, type_code: u, method_code: VB, agent_key: jellis, sale_price: , bid_amount: , event_date: "2017-12-16", source_row: 2}
+          - {suburb_key: kew, street_address_key: "1 acacia pl", rooms: 2, type_code: u, method_code: VB, agent_key: jellis, sale_price: , bid_amount: 750000, event_date: "2017-12-23", source_row: 3}
+    expect:
+      rows:
+        - {event_date: "2017-12-16", dq_status: ok, recapture_rank: 1}
+        - {event_date: "2017-12-16", dq_status: suspected_restatement, recapture_rank: }
+        - {event_date: "2017-12-23", dq_status: suspected_recapture, recapture_rank: 2}

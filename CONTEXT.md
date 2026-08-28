@@ -49,6 +49,11 @@ _Avoid_: has price, price known
 
 ### Data quality
 
+**Restatement**:
+A later correction of an already-recorded **Listing Outcome** — same property, date, method
+and agent, but changed content, almost always a price published after the fact.
+_Avoid_: update, revision, duplicate
+
 **Recapture**:
 A republished snapshot of an earlier **Listing Outcome**, stamped with the capture date rather
 than the event date. Not a distinct event.
@@ -135,9 +140,18 @@ _Avoid_: sale date, auction day
 - **"price"** was used for both consideration paid and highest bid on an unsold property —
   resolved: **Sale Price** and **Bid Amount** are separate, mutually exclusive columns. There
   is deliberately no column called `price`.
-- **"duplicate"** was used for both byte-identical rows (2 in the file) and republished
-  snapshots (3,222) — resolved: the latter are **Recaptures**, and they are the ones that
-  matter.
+- **"duplicate"** was used for three different things — resolved into three named reasons,
+  because they have opposite signatures and no single rule catches them all:
+  **Recapture** (3,200: same content, *different* date), **Restatement** (5: same date,
+  *different* content), and plain **exact duplicate** (2: the same row twice, nothing changed).
+- **Agency identity is not just a casing problem.** `C21` and `Century` are the same agency
+  recorded two ways, and lowercasing cannot merge them. One outcome is affected. No alias list
+  is maintained: inventing one from 470 names would guess more than it resolved.
+- **A compound agency name is a co-listing.** 42 agency names contain a slash
+  (`Buxton/Hodges`, `Fletchers/Fletchers`), covering 126 outcomes. These are two agencies
+  sharing one campaign, encoded in one string — so co-listings are recorded, just not
+  decomposed. Modelled as a single agency, since splitting them would need a bridge table for
+  126 rows.
 - **"missing price"** was used for two unrelated situations — a property that didn't sell, and
   a sale whose price wasn't published — resolved: these are distinguished by **Sale** vs
   non-Sale, with **Disclosed Price** covering the second.

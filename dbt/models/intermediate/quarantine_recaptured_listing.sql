@@ -1,15 +1,19 @@
 {{ config(materialized='table') }}
 
--- Rows excluded as republished snapshots. Deleted from the fact but not from the warehouse:
--- the exclusion has to be provable, inspectable and challengeable (ADR-0006).
+-- Every row excluded from the fact, with the reason it was excluded and the event date it was
+-- collapsed into. Deleted from the star but not from the warehouse: an exclusion has to be
+-- provable, inspectable and challengeable (ADR-0006).
 --
--- The filter is the exact complement of int__listing_outcome_deduped's, both derived from the
--- same clustering model, so no row can fall between the two.
+-- Two reasons, two different phenomena:
+--   suspected_restatement  a later correction of the same event, usually a price published
+--                          after the fact. Same date, different content.
+--   suspected_recapture    a republished snapshot of an earlier event. Same content,
+--                          different date.
 
 select
     {{ dbt_utils.generate_surrogate_key(['business_signature', 'event_date', 'source_row']) }}
         as quarantine_key,
-    'suspected_recapture'          as reason,
+    dq_status                      as reason,
     business_signature,
     surviving_event_date,
     days_since_previous_appearance,
@@ -28,4 +32,4 @@ select
     load_id,
     source_row
 from {{ ref('int__listing_outcome_clustered') }}
-where recapture_rank > 1
+where dq_status != 'ok'

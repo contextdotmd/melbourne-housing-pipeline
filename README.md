@@ -2,7 +2,7 @@
 
 An end-to-end pipeline over `MELBOURNE_HOUSE_PRICES_LESS.csv`: ingestion with row-level error
 handling, a dbt star schema, four analytics models, and an Airflow DAG with a data-quality
-gate. Built test-first — 173 tests, no warnings.
+gate. Built test-first — 178 tests, no warnings.
 
 ```bash
 make setup && make all
@@ -77,14 +77,14 @@ deviations.
 | `data/raw` | 63,023 | the untouched source CSV |
 | `data/landing` | 63,023 | typed, contract-checked Parquet — the raw copy |
 | `staging` | 63,023 | normalise values. Row-preserving, deliberately |
-| `intermediate` | 63,023 → **59,821** | derive meaning, then collapse recaptures |
-| `marts` | 59,821 | the star: one fact, six conformed dimensions |
+| `intermediate` | 63,023 → **59,816** | derive meaning, then collapse duplicated rows |
+| `marts` | 59,816 | the star: one fact, six conformed dimensions |
 | `analytics` | — | four consumption models |
 
 ### The row ledger
 
 ```
-59,821 (fact)  +  3,202 (quarantine)  =  63,023 (staged)  =  rows_loaded in the ingest receipt
+59,816 (fact)  +  3,207 (quarantine)  =  63,023 (staged)  =  rows_loaded in the ingest receipt
 ```
 
 That identity is a dbt test, not a comment. Staging is row-preserving so the chain has an
@@ -171,7 +171,7 @@ BigQuery or Snowflake that trade-off inverts and `astronomer-cosmos` becomes the
 
 ## Data dictionary
 
-### `marts.fact__listing_outcome` — 59,821 rows
+### `marts.fact__listing_outcome` — 59,816 rows
 
 One row per listing outcome: a campaign for one property on one event date, sold or not.
 
@@ -209,11 +209,20 @@ agent spellings; case variants (`Croydon`/`croydon`, `VICPROP`/`VICProp`/`Vicpro
 377 and 470. Dimensions key on the lowercased value and pick the display spelling by
 frequency, tie-broken alphabetically so rebuilds are deterministic.
 
-### `intermediate.quarantine_recaptured_listing` — 3,202 rows
+### `intermediate.quarantine_recaptured_listing` — 3,207 rows
 
-Every excluded row, with `reason`, `surviving_event_date` and
+Every excluded row, with its `reason`, `surviving_event_date` and
 `days_since_previous_appearance`. Quarantined rather than deleted so the exclusion is
 provable, inspectable and challengeable.
+
+| Reason | Rows | Signature |
+|---|---|---|
+| `suspected_recapture` | 3,200 | same content, **different** date |
+| `suspected_restatement` | 5 | same date, **different** content — a price published later |
+| `exact_duplicate` | 2 | the same row twice, nothing changed |
+
+The first two are exact opposites, which is why no single rule catches both: a key containing
+the price is blind to restatements, and one containing the date is blind to recaptures.
 
 ### Analytics
 
@@ -255,14 +264,14 @@ who disagrees can see exactly what it affected.
 
 ## Testing
 
-173 tests, zero warnings, and a clean rebuild takes 10.6 seconds. **No test is set to `warn`
+178 tests, zero warnings, and a clean rebuild takes about 11 seconds. **No test is set to `warn`
 severity** — a test tuned to be quiet is worse than no test.
 
 | Kind | Count | Runs against |
 |---|---|---|
 | pytest — loader, quality gate | 37 | fixtures |
 | pytest — Airflow DAG structure | 9 | the DAG file |
-| dbt unit tests | 36 | mocked rows, no warehouse data |
+| dbt unit tests | 41 | mocked rows, no warehouse data |
 | dbt data tests | 91 | the built warehouse |
 
 Written test-first for everything with real logic; dimensions and passthrough columns are
@@ -289,6 +298,11 @@ Two are explicit regression guards against mistakes that are invisible once made
   Volume and clearance metrics cover 100%.
 - **Addresses are unstandardised.** `1/23 Smith St` and `Unit 1, 23 Smith St` would be
   different properties. Property identity is approximate.
+- **Agency names carry aliases and co-listings.** `C21` and `Century` are one agency recorded
+  two ways — lowercasing cannot merge them, and one outcome is affected. Separately, 42 agency
+  names are compound (`Buxton/Hodges`), covering 126 outcomes: two agencies sharing one
+  campaign, modelled as a single agency rather than decomposed. No alias list is maintained,
+  because inventing one across 470 names would guess more than it resolved.
 - **DuckDB is not a cloud warehouse** — see porting notes below.
 - **No incrementality by design** ([ADR-0008](docs/adr/0008-no-incremental-materialisation.md)).
 - **The DAG is deliberately coarse** ([ADR-0003](docs/adr/0003-airflow-owns-phases-dbt-owns-lineage.md)).

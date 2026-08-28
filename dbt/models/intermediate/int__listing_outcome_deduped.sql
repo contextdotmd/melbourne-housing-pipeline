@@ -1,8 +1,7 @@
 {{ config(materialized='table') }}
 
--- The earliest appearance of each cluster: one row per genuine listing outcome.
--- Complementary to quarantine_recaptured_listing by construction — together they must
--- reconcile exactly to staging.
+-- One row per genuine listing outcome: neither a restatement of another row nor a
+-- republication of one. Complementary to quarantine_recaptured_listing by construction.
 
 select
     business_signature,
@@ -29,4 +28,4 @@ select
     load_id,
     source_row
 from {{ ref('int__listing_outcome_clustered') }}
-where recapture_rank = 1
+where dq_status = 'ok'

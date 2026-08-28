@@ -90,12 +90,12 @@ between a model built on the data and a model built on the business.
 |---|---|---|
 | **Property** | ✅ identified by suburb + address only | No title or lot ID, so identity is a string match — `1/23 Smith St` and `Unit 1, 23 Smith St` would be two properties |
 | **Suburb / Council / Region** | ✅ all three, as attributes of one row | Modelled as a flattened `dim_suburb` rather than a snowflake — the hierarchy is strict and only three levels deep |
-| **Agency** | ⚠️ one name per outcome (`SellerG`) | Co-listings are invisible; a campaign run by two agencies looks like one |
+| **Agency** | ⚠️ one name per outcome (`SellerG`) | Co-listings *are* recorded, encoded as a compound name (`Buxton/Hodges`) — 42 such names over 126 outcomes — but not decomposed into two agencies. Aliases are also unresolved: `C21` and `Century` are one agency |
 | **Sales Campaign** | ⚠️ **collapsed** into the outcome row | No listing date, so **no days-on-market**; no price guide; no reserve |
 | **Auction Event** | ⚠️ **collapsed** — inferable from `Method` + `Date` | Cannot distinguish auction date from campaign end |
 | **Bid** | ⚠️ **collapsed** to at most one number | Only the highest or vendor bid survives, and only sometimes. This is why `Price` is overloaded |
 | **Campaign Outcome** | ✅ `Method` | The grain of our fact |
-| **Transaction** | ⚠️ **collapsed** into the same row | Contract and settlement dates are indistinguishable; `price_disclosed` survives as a derived flag |
+| **Transaction** | ⚠️ **collapsed** into the same row | Contract and settlement dates are indistinguishable; `price_disclosed` survives as a derived flag. Restatements — a price published after the fact — appear as a second row and must be collapsed |
 | **Vendor** | ❌ absent | No repeat-vendor analysis, no held-duration by owner |
 | **Buyer** | ❌ absent | No purchaser behaviour, no investor-vs-owner-occupier split |
 | **Bidder** | ❌ absent | Bid counts, competition depth and clearance dynamics are unavailable |
