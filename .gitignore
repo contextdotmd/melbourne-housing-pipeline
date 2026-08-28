@@ -1,0 +1,23 @@
+# data is never committed — the source CSV is confidential
+data/
+*.duckdb
+*.duckdb.wal
+
+# python
+.venv/
+.venv-airflow/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# dbt
+dbt/target/
+dbt/dbt_packages/
+dbt/logs/
+
+# airflow
+airflow/airflow.db*
+airflow/logs/
+airflow/*.cfg
+airflow/*.pid
+airflow/simple_auth_manager_passwords.json.generated

@@ -1,0 +1,31 @@
+[project]
+name = "melbourne-housing-pipeline"
+version = "0.1.0"
+description = "End-to-end pipeline over the Melbourne Housing Market dataset"
+requires-python = ">=3.11,<3.13"
+dependencies = [
+    "dbt-duckdb>=1.11.0",
+    "duckdb>=1.5.0",
+    "pyarrow>=17.0.0",
+]
+
+[project.optional-dependencies]
+# Airflow is resolved separately (see `make setup-airflow`): its transitive pins
+# conflict with dbt-core's if solved in the same environment.
+airflow = [
+    "apache-airflow==3.3.1",
+    "requests>=2.32.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-q"
+
+[tool.uv]
+package = false
