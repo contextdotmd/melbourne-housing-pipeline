@@ -331,8 +331,13 @@ Once on a real warehouse the single-writer constraint disappears, at which point
 
 ## Future improvements
 
-- **Incremental fact** with a rolling look-back window keyed on the surrogate key, rather than
-  a strict watermark that drops same-day arrivals.
+- **Incremental build**, once the full rebuild stops fitting its schedule. Not the obvious
+  way: an event-date window is actively wrong here, because a restatement arrives today
+  carrying a two-year-old date and would never be seen. The design is delta detection at
+  ingestion by row hash, then reprocessing whole *properties* — both dedup rules partition by
+  a key containing the property, so that removes the look-back window entirely rather than
+  merely sizing it. A median auction day touches under 1% of history. Worked through in
+  [docs/incremental-design.md](docs/incremental-design.md).
 - **Address standardisation** and geocoding, which would materially improve property identity
   and unlock the repeat-sale population beyond the current 174 properties.
 - **Bring in `Melbourne_housing_FULL.csv`** for building area, land size and coordinates,
