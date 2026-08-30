@@ -61,6 +61,38 @@ limit. Rebuilding 13,000 rows to avoid a class of staleness bug is a good trade.
 The principle generalises: **spend incremental complexity only where the row count is driven by
 event volume.**
 
+## Why the write is a delete plus an append, not a merge or a `unique_key`
+
+The write replaces a whole property, and that is not an upsert.
+
+`merge` cannot express it. When a later delivery arrives with an outcome identical to one
+already in the fact but dated a week earlier, the recapture rule keeps the earliest — so the
+row already in the fact must **stop existing** and be replaced by a different row with a
+different surrogate key. Demonstrated: fact goes from `2017-01-14` to `2017-01-07`, the key
+changes, and the superseded row moves to quarantine. A merge would have left both and reported
+two sales where one occurred, because it can only update rows the incoming set matches. It has
+no way to remove what no longer qualifies.
+
+dbt's `delete+insert` does the right thing, and its `unique_key` is documented as tolerating a
+non-unique column. It is still the wrong thing to write here: the reprocessing unit is the
+property, and a property has many rows — 59,816 outcomes across 58,696 properties, one with
+four. Declaring that as `unique_key` asserts something untrue, and the next reader either
+believes it or switches to `merge` and silently breaks the model.
+
+So the delete is spelled out in a `pre_hook` and the strategy is `append`. The config then says
+what actually happens, and uniqueness is asserted where it genuinely holds:
+
+| Model | Real row key | Reprocessing unit |
+|---|---|---|
+| `stg__listing_outcome` | `(load_id, source_row)` | the load |
+| `int__listing_outcome_clustered` | `(load_id, source_row)` | the property |
+| `fact__listing_outcome` | `listing_outcome_key` | the property |
+| `dim_property` | `property_key` | the property |
+
+Every one of those row keys carries a uniqueness test. On an incremental model that matters
+more than usual: a scope predicate that deleted too little shows up immediately as duplicated
+rows, rather than as a silent overcount three models downstream.
+
 ## The scope is passed in, not inferred
 
 The orchestrator knows what it just ingested and says so:

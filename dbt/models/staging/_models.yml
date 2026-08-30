@@ -48,6 +48,12 @@ models:
           The source Price column, still overloaded — it is a sale price on some rows and a
           highest/vendor bid on others. Deliberately NOT called `price` (see CONTEXT.md); the
           split into sale_price and bid_amount happens in int__listing_outcome.
+    data_tests:
+      # Appending a load twice would double the log and break the row ledger. This is the
+      # test that catches it, and the reason the model filters out already-staged loads.
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [load_id, source_row]
 
 unit_tests:
   - name: suburb_case_variants_share_one_key_but_keep_their_own_display

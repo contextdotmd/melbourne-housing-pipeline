@@ -31,6 +31,13 @@ models:
         tests: [not_null]
       - name: surviving_event_date
         tests: [not_null]
+    data_tests:
+      # The model's genuine row key. Worth asserting explicitly on an incremental model:
+      # the write is a group replace, so a scope predicate that deleted too little would
+      # show up here as duplicated rows rather than as a silent overcount downstream.
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [load_id, source_row]
 
   - name: int__listing_outcome_deduped
     description: One row per genuine listing outcome — the earliest appearance of each cluster.

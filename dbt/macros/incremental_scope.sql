@@ -56,3 +56,48 @@
                as property_key
     from ({{ affected_properties() }}) as scope
 {% endmacro %}
+
+
+{% macro overwrite_affected_partitions(partitioned_by='property_key') %}
+{#-
+  Overwrite the partitions this run touches.
+
+  The unit is the PROPERTY, and that is a partition, not a unique key. A fact table having
+  many rows per property is not a defect — it is what a many-to-one dimension foreign key
+  means, and 1,092 properties genuinely have more than one listing outcome. Each model's real
+  unique key is asserted separately and normally: listing_outcome_key on the fact,
+  (load_id, source_row) on staging and the clustered model, property_key on dim_property.
+
+  dbt's delete+insert strategy would do the same thing, and its `unique_key` is documented as
+  tolerating a non-unique column. But the reprocessing unit here is the PROPERTY, and a
+  property has many rows — 59,816 outcomes across 58,696 properties, one of them with four.
+  Declaring that as `unique_key` asserts something untrue about the model, and the next reader
+  will either believe it or switch to `merge` — which cannot express this operation at all.
+  When a later delivery makes an existing outcome a recapture, that row must STOP EXISTING,
+  and merge has no way to delete what no longer qualifies.
+
+  Each model keeps a real uniqueness test on its actual row key, asserted the normal way.
+
+  This is `insert_overwrite` semantics — replace whole partitions — emulated because
+  dbt-duckdb has no such strategy. On BigQuery or Spark it would be the native
+  `insert_overwrite` with `partition_by`, and on Snowflake the same delete-then-insert. The
+  operation is identical; only the syntax differs.
+
+  `partitioned_by` selects how the partition is expressed: 'property_key' for models carrying
+  the hash, 'property_parts' for those carrying the columns it hashes.
+-#}
+    {%- if is_incremental() and var('load_ids', none) -%}
+        {%- if partitioned_by == 'property_parts' -%}
+            delete from {{ this }}
+            where (suburb_key, street_address_key) in (
+                select suburb_key, street_address_key from ({{ affected_properties() }}) as scope
+            )
+        {%- else -%}
+            delete from {{ this }}
+            where property_key in ({{ affected_property_keys() }})
+        {%- endif -%}
+    {%- else -%}
+        {#- nothing to remove on a first build or a full refresh -#}
+        select 1 where false
+    {%- endif -%}
+{% endmacro %}

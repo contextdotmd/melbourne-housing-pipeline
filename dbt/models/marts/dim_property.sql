@@ -1,7 +1,11 @@
+{#- Partition overwrite: the unit of work is the property, which is a partition and
+    not a unique key. This model's real unique key is asserted by a test rather than
+    claimed by config. See ADR-0011. -#}
 {{ config(
     materialized = 'incremental',
-    unique_key = 'property_key',
-    incremental_strategy = 'delete+insert',
+    incremental_strategy = 'append',
+    on_schema_change = 'sync_all_columns',
+    pre_hook = "{{ overwrite_affected_partitions('property_key') }}",
 ) }}
 
 {#- dbt cannot infer a ref() that only appears inside a conditional, so the scope
