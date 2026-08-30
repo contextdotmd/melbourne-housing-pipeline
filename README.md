@@ -231,11 +231,25 @@ a real warehouse that inverts and `astronomer-cosmos` becomes right
 
 ## How to run
 
-**Prerequisites:** [uv](https://docs.astral.sh/uv/). Optionally `brew install duckdb` to query
-interactively.
+```bash
+./install.sh --csv /path/to/MELBOURNE_HOUSE_PRICES_LESS.csv
+make all
+```
+
+The dataset is not committed, so point the installer at the CSV. It checks for
+[uv](https://docs.astral.sh/uv/) and offers to install it, provisions the Python version,
+installs dependencies and dbt packages, and verifies by parsing the project and running the
+tests that need no data. Re-running it is safe.
+
+| Flag | Does |
+|---|---|
+| `--csv <path>` | copy the source file into `data/raw/` |
+| `--with-airflow` | also build the Airflow environment (separate venv — its pins conflict with dbt-core's) |
+| `--yes` | never prompt, for CI |
+
+Then:
 
 ```bash
-make setup     # dependencies and dbt packages
 make all       # ingest + build the whole warehouse
 make test      # Python tests, then every model and every test
 ```
@@ -246,7 +260,7 @@ make test      # Python tests, then every model and every test
 | `make build` | every model and every test, in dependency order |
 | `make test-unit` | dbt unit tests only — no warehouse data needed |
 | `make test-equivalence` | prove the incremental build matches a full rebuild |
-| `make setup-airflow` / `make test-dag` / `make airflow` | Airflow install, DAG tests, local run |
+| `make test-dag` / `make airflow` | DAG structure tests, local Airflow run |
 | `make ui` / `make sql` | DuckDB browser UI / SQL prompt |
 | `make docs` | generate and serve the dbt docs site |
 | `make clean` | remove derived data, keep `data/raw` |

@@ -1,7 +1,7 @@
 # Melbourne housing pipeline
 #
-# `make all` reproduces everything from the source CSV in well under a minute.
-# Requires: uv (https://docs.astral.sh/uv/). Everything else installs itself.
+# Start with ./install.sh — it checks prerequisites, installs everything and
+# places the source CSV. `make all` then reproduces the warehouse in seconds.
 
 DBT      := uv run dbt
 DBT_ARGS := --project-dir dbt --profiles-dir dbt
@@ -14,14 +14,11 @@ SOURCE   := data/raw/MELBOURNE_HOUSE_PRICES_LESS.csv
 help: ## Show this help
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk -F':.*?## ' '{printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
 
-setup: ## Install Python dependencies and dbt packages
-	uv sync --group dev
-	$(DBT) deps $(DBT_ARGS)
+setup: ## Install everything (delegates to ./install.sh)
+	./install.sh
 
-setup-airflow: ## Install Airflow into its own environment (its pins conflict with dbt-core's)
-	uv venv .venv-airflow --python 3.12
-	uv pip install --python .venv-airflow "apache-airflow==3.3.1" pytest \
-		--constraint "https://raw.githubusercontent.com/apache/airflow/constraints-3.3.1/constraints-3.12.txt"
+setup-airflow: ## Also build the Airflow environment (its pins conflict with dbt-core's)
+	./install.sh --with-airflow
 
 ingest: ## Load the CSV into the Parquet landing zone
 	uv run python -m ingest.cli $(SOURCE) data
