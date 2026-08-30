@@ -78,25 +78,37 @@ with DAG(
     tags=["dbt", "duckdb", "housing"],
 ) as dag:
 
-    ingest = BashOperator(
-        task_id="ingest",
-        cwd=str(PROJECT_ROOT),
-        bash_command="uv run python -m ingest.cli data/raw/MELBOURNE_HOUSE_PRICES_LESS.csv data",
-        doc_md=(
-            "Streams the CSV into the Parquet landing zone. Idempotent: the load id is the "
-            "source SHA-256, so re-running against identical bytes overwrites the same "
-            "partition rather than accumulating copies."
-        ),
-    )
+    @task(task_id="ingest")
+    def ingest() -> str:
+        """Load today's CSV and return its load id.
+
+        The id is what scopes the build downstream, so it is a task return value rather than
+        something dbt has to rediscover. Idempotent: the id is the source SHA-256, so
+        re-running against identical bytes overwrites the same partition.
+        """
+        from ingest.loader import load_csv
+
+        result = load_csv(
+            PROJECT_ROOT / "data" / "raw" / "MELBOURNE_HOUSE_PRICES_LESS.csv",
+            PROJECT_ROOT / "data",
+        )
+        return result.load_id
+
+    load_id = ingest()
 
     dbt_build = BashOperator(
         task_id="dbt_build",
         cwd=str(PROJECT_ROOT),
-        bash_command="uv run dbt build --project-dir dbt --profiles-dir dbt --fail-fast",
+        bash_command=(
+            "uv run dbt build --project-dir dbt --profiles-dir dbt --fail-fast "
+            """ + --vars '{{"load_ids": ["{{ ti.xcom_pull(task_ids='ingest') }}"]}}' + """
+        ),
         doc_md=(
-            "Runs every model, unit test and data test in dependency order. `dbt build` "
-            "interleaves tests with models, so a failing test stops its dependents rather "
-            "than letting them build on bad data."
+            "Runs every model and every test in dependency order, scoped to the load just "
+            "ingested. Models that scale with event volume reprocess only the properties "
+            "that load touched; aggregates bounded by dimension cardinality rebuild in full "
+            "(ADR-0011). `dbt build` interleaves tests with models, so a failing test stops "
+            "its dependents rather than letting them build on bad data."
         ),
     )
 
@@ -125,4 +137,4 @@ with DAG(
             "rows_rejected": receipt["rows_rejected"],
         }
 
-    ingest >> dbt_build >> dq_gate()
+    load_id >> dbt_build >> dq_gate()

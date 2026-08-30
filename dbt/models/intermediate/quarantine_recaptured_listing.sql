@@ -1,4 +1,4 @@
-{{ config(materialized='table') }}
+{{ config(materialized='view') }}
 
 -- Every row excluded from the fact, with the reason it was excluded and the event date it was
 -- collapsed into. Deleted from the star but not from the warehouse: an exclusion has to be

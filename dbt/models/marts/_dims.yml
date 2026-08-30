@@ -80,12 +80,17 @@ unit_tests:
       Croydon appears 330 times and croydon once. Both must collapse to one dimension member,
       and the member must carry the spelling a reader expects.
     model: dim_suburb
+    overrides:
+      macros:
+        is_incremental: false
     given:
       - input: ref('int__listing_outcome_deduped')
         rows:
           - {suburb_key: croydon, suburb_name: "Croydon", postcode: "3136", region_name: "Eastern Metropolitan", council_area: "Maroondah City Council", cbd_distance_km: 25.0, property_count: 6338}
           - {suburb_key: croydon, suburb_name: "Croydon", postcode: "3136", region_name: "Eastern Metropolitan", council_area: "Maroondah City Council", cbd_distance_km: 25.0, property_count: 6338}
           - {suburb_key: croydon, suburb_name: "croydon", postcode: "3136", region_name: "Eastern Metropolitan", council_area: "Maroondah City Council", cbd_distance_km: 25.0, property_count: 6338}
+      - input: ref('stg__listing_outcome')
+        rows: []
     expect:
       rows:
         - {suburb_key: croydon, suburb_name: "Croydon", postcode: "3136"}
@@ -95,17 +100,25 @@ unit_tests:
       Without a tie-break the winner is whichever row the engine happens to reach first, so
       the dimension would change between rebuilds for no reason.
     model: dim_suburb
+    overrides:
+      macros:
+        is_incremental: false
     given:
       - input: ref('int__listing_outcome_deduped')
         rows:
           - {suburb_key: macleod, suburb_name: "MacLeod", postcode: "3085", region_name: "Northern Metropolitan", council_area: "Banyule City Council", cbd_distance_km: 12.1, property_count: 2321}
           - {suburb_key: macleod, suburb_name: "Macleod", postcode: "3085", region_name: "Northern Metropolitan", council_area: "Banyule City Council", cbd_distance_km: 12.1, property_count: 2321}
+      - input: ref('stg__listing_outcome')
+        rows: []
     expect:
       rows:
         - {suburb_key: macleod, suburb_name: "MacLeod"}
 
   - name: agent_display_name_is_the_most_frequent_spelling
     model: dim_agent
+    overrides:
+      macros:
+        is_incremental: false
     given:
       - input: ref('int__listing_outcome_deduped')
         rows:
@@ -113,6 +126,8 @@ unit_tests:
           - {agent_key: vicprop, agent_name: "VICPROP"}
           - {agent_key: vicprop, agent_name: "VICProp"}
           - {agent_key: vicprop, agent_name: "Vicprop"}
+      - input: ref('stg__listing_outcome')
+        rows: []
     expect:
       rows:
         - {agent_key: vicprop, agent_name: "VICPROP"}
@@ -122,11 +137,16 @@ unit_tests:
       "14 Moray St" occurs in seven suburbs. Keyed on address alone they would merge into one
       dwelling and their sale histories would be spliced together.
     model: dim_property
+    overrides:
+      macros:
+        is_incremental: false
     given:
       - input: ref('int__listing_outcome_deduped')
         rows:
           - {suburb_key: "south melbourne", street_address_key: "14 moray st", street_address: "14 Moray St"}
           - {suburb_key: "new gisborne", street_address_key: "14 moray st", street_address: "14 Moray St"}
+      - input: ref('stg__listing_outcome')
+        rows: []
     expect:
       rows:
         - {suburb_key: "south melbourne", street_address: "14 Moray St"}

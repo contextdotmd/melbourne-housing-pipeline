@@ -1,6 +1,13 @@
-{{ config(materialized='view') }}
+{{ config(materialized='table') }}
 
 -- Suburb x month market health.
+--
+-- NOT INCREMENTAL, deliberately. This is an aggregate: its size is bounded by dimension
+-- cardinality (suburbs x months, agents x region-months), not by event volume, so it stays
+-- small while the fact grows. Making it incremental was tried and reverted — an aggregate
+-- that denormalises a dimension attribute goes stale when that attribute changes, and
+-- extending the date spine silently invalidates every series. Both were caught by
+-- tests/equivalence_harness.py. Paying that complexity to rebuild ~13k rows is a bad trade.
 --
 -- Built over a complete grid of suburbs and calendar months, not just the months that saw
 -- activity. Only 112 days in three years carry any, so aggregating observed months alone
@@ -21,8 +28,7 @@ with grid as (
         months.month_start
     from {{ ref('dim_suburb') }} as suburb
     cross join (select distinct month_start from {{ ref('dim_date') }}) as months
-
-),
+    ),
 
 measured as (
 

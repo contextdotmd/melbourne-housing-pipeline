@@ -66,6 +66,9 @@ unit_tests:
       The Christmas shutdown artefact in miniature: one snapshot republished weekly, then once
       more two days later. Five rows, one event — every row points at the same survivor.
     model: int__listing_outcome_clustered
+    overrides:
+      macros:
+        is_incremental: false
     given:
       - input: ref('int__listing_outcome')
         rows:
@@ -74,6 +77,8 @@ unit_tests:
           - {suburb_key: kew, street_address_key: "1 acacia pl", rooms: 2, type_code: u, method_code: VB, agent_key: jellis, sale_price: , bid_amount: 750000, event_date: "2017-12-30", source_row: 3}
           - {suburb_key: kew, street_address_key: "1 acacia pl", rooms: 2, type_code: u, method_code: VB, agent_key: jellis, sale_price: , bid_amount: 750000, event_date: "2018-01-06", source_row: 4}
           - {suburb_key: kew, street_address_key: "1 acacia pl", rooms: 2, type_code: u, method_code: VB, agent_key: jellis, sale_price: , bid_amount: 750000, event_date: "2018-01-08", source_row: 5}
+      - input: ref('stg__listing_outcome')
+        rows: []
     expect:
       rows:
         - {event_date: "2017-12-16", recapture_rank: 1, surviving_event_date: "2017-12-16", dq_status: ok}
@@ -87,11 +92,16 @@ unit_tests:
       Identical on every column except the date, but 91 days apart — a property passed in
       twice at the same reserve with the same agent. A blanket rule would wrongly merge these.
     model: int__listing_outcome_clustered
+    overrides:
+      macros:
+        is_incremental: false
     given:
       - input: ref('int__listing_outcome')
         rows:
           - {suburb_key: balwyn, street_address_key: "9 kenilworth st", rooms: 5, type_code: h, method_code: PI, agent_key: fletchers, sale_price: , bid_amount: 2700000, event_date: "2017-04-01", source_row: 1}
           - {suburb_key: balwyn, street_address_key: "9 kenilworth st", rooms: 5, type_code: h, method_code: PI, agent_key: fletchers, sale_price: , bid_amount: 2700000, event_date: "2017-07-01", source_row: 2}
+      - input: ref('stg__listing_outcome')
+        rows: []
     expect:
       rows:
         - {event_date: "2017-04-01", recapture_rank: 1, surviving_event_date: "2017-04-01"}
@@ -100,11 +110,16 @@ unit_tests:
   - name: exactly_twenty_one_days_apart_still_clusters
     description: The window is inclusive. Pinned so the boundary cannot drift silently.
     model: int__listing_outcome_clustered
+    overrides:
+      macros:
+        is_incremental: false
     given:
       - input: ref('int__listing_outcome')
         rows:
           - {suburb_key: kew, street_address_key: "2 bay rd", rooms: 3, type_code: h, method_code: S, agent_key: nelson, sale_price: 900000, bid_amount: , event_date: "2017-04-01", source_row: 1}
           - {suburb_key: kew, street_address_key: "2 bay rd", rooms: 3, type_code: h, method_code: S, agent_key: nelson, sale_price: 900000, bid_amount: , event_date: "2017-04-22", source_row: 2}
+      - input: ref('stg__listing_outcome')
+        rows: []
     expect:
       rows:
         - {event_date: "2017-04-01", recapture_rank: 1}
@@ -112,11 +127,16 @@ unit_tests:
 
   - name: twenty_two_days_apart_breaks_the_cluster
     model: int__listing_outcome_clustered
+    overrides:
+      macros:
+        is_incremental: false
     given:
       - input: ref('int__listing_outcome')
         rows:
           - {suburb_key: kew, street_address_key: "2 bay rd", rooms: 3, type_code: h, method_code: S, agent_key: nelson, sale_price: 900000, bid_amount: , event_date: "2017-04-01", source_row: 1}
           - {suburb_key: kew, street_address_key: "2 bay rd", rooms: 3, type_code: h, method_code: S, agent_key: nelson, sale_price: 900000, bid_amount: , event_date: "2017-04-23", source_row: 2}
+      - input: ref('stg__listing_outcome')
+        rows: []
     expect:
       rows:
         - {event_date: "2017-04-01", recapture_rank: 1}
@@ -127,11 +147,16 @@ unit_tests:
       Same property, same agent, a week apart, but a different figure — a genuine second
       campaign, not a republished snapshot.
     model: int__listing_outcome_clustered
+    overrides:
+      macros:
+        is_incremental: false
     given:
       - input: ref('int__listing_outcome')
         rows:
           - {suburb_key: brunswick, street_address_key: "70 gold st", rooms: 4, type_code: h, method_code: PI, agent_key: jellis, sale_price: , bid_amount: 1250000, event_date: "2017-04-01", source_row: 1}
           - {suburb_key: brunswick, street_address_key: "70 gold st", rooms: 4, type_code: h, method_code: PI, agent_key: jellis, sale_price: , bid_amount: 1300000, event_date: "2017-04-08", source_row: 2}
+      - input: ref('stg__listing_outcome')
+        rows: []
     expect:
       rows:
         - {event_date: "2017-04-01", recapture_rank: 1}
@@ -139,11 +164,16 @@ unit_tests:
 
   - name: a_different_agent_is_a_different_signature
     model: int__listing_outcome_clustered
+    overrides:
+      macros:
+        is_incremental: false
     given:
       - input: ref('int__listing_outcome')
         rows:
           - {suburb_key: balwyn, street_address_key: "9 kenilworth st", rooms: 5, type_code: h, method_code: PI, agent_key: hockingstuart, sale_price: , bid_amount: 2700000, event_date: "2017-04-01", source_row: 1}
           - {suburb_key: balwyn, street_address_key: "9 kenilworth st", rooms: 5, type_code: h, method_code: PI, agent_key: fletchers, sale_price: , bid_amount: 2700000, event_date: "2017-04-08", source_row: 2}
+      - input: ref('stg__listing_outcome')
+        rows: []
     expect:
       rows:
         - {event_date: "2017-04-01", recapture_rank: 1}
@@ -155,11 +185,16 @@ unit_tests:
       restatement (nothing changed) nor a recapture (the date did not move) — it is simply
       the same row twice, and the quarantine says so.
     model: int__listing_outcome_clustered
+    overrides:
+      macros:
+        is_incremental: false
     given:
       - input: ref('int__listing_outcome')
         rows:
           - {suburb_key: kew, street_address_key: "2 bay rd", rooms: 3, type_code: h, method_code: S, agent_key: nelson, sale_price: 900000, bid_amount: , event_date: "2017-04-01", source_row: 1}
           - {suburb_key: kew, street_address_key: "2 bay rd", rooms: 3, type_code: h, method_code: S, agent_key: nelson, sale_price: 900000, bid_amount: , event_date: "2017-04-01", source_row: 2}
+      - input: ref('stg__listing_outcome')
+        rows: []
     expect:
       rows:
         - {event_date: "2017-04-01", dq_status: ok}
@@ -170,11 +205,16 @@ unit_tests:
       SN, PN, SS and W are 100% null-priced. If nulls did not compare equal, the artefact
       would survive untouched in exactly those methods.
     model: int__listing_outcome_clustered
+    overrides:
+      macros:
+        is_incremental: false
     given:
       - input: ref('int__listing_outcome')
         rows:
           - {suburb_key: "airport west", street_address_key: "122 parer rd", rooms: 4, type_code: h, method_code: SN, agent_key: brad, sale_price: , bid_amount: , event_date: "2017-12-16", source_row: 1}
           - {suburb_key: "airport west", street_address_key: "122 parer rd", rooms: 4, type_code: h, method_code: SN, agent_key: brad, sale_price: , bid_amount: , event_date: "2017-12-23", source_row: 2}
+      - input: ref('stg__listing_outcome')
+        rows: []
     expect:
       rows:
         - {event_date: "2017-12-16", recapture_rank: 1}
@@ -220,11 +260,16 @@ unit_tests:
       so the recapture rule cannot see it. Left unhandled, every sale whose price is later
       disclosed would be counted twice.
     model: int__listing_outcome_clustered
+    overrides:
+      macros:
+        is_incremental: false
     given:
       - input: ref('int__listing_outcome')
         rows:
           - {suburb_key: toorak, street_address_key: "2/9 tintern av", rooms: 2, type_code: u, method_code: SP, agent_key: marshall, sale_price: , bid_amount: , event_date: "2016-09-24", source_row: 1}
           - {suburb_key: toorak, street_address_key: "2/9 tintern av", rooms: 2, type_code: u, method_code: SP, agent_key: marshall, sale_price: 851000, bid_amount: , event_date: "2016-09-24", source_row: 2}
+      - input: ref('stg__listing_outcome')
+        rows: []
     expect:
       rows:
         - {event_date: "2016-09-24", sale_price: 851000, dq_status: ok}
@@ -233,11 +278,16 @@ unit_tests:
   - name: the_most_informative_row_wins_a_restatement
     description: A disclosed price is strictly more informative than a null one, whatever the row order.
     model: int__listing_outcome_clustered
+    overrides:
+      macros:
+        is_incremental: false
     given:
       - input: ref('int__listing_outcome')
         rows:
           - {suburb_key: "port melbourne", street_address_key: "224 nott st", rooms: 3, type_code: h, method_code: SP, agent_key: greg, sale_price: 1405000, bid_amount: , event_date: "2016-07-30", source_row: 1}
           - {suburb_key: "port melbourne", street_address_key: "224 nott st", rooms: 3, type_code: h, method_code: SP, agent_key: greg, sale_price: , bid_amount: , event_date: "2016-07-30", source_row: 2}
+      - input: ref('stg__listing_outcome')
+        rows: []
     expect:
       rows:
         - {event_date: "2016-07-30", sale_price: 1405000, dq_status: ok}
@@ -248,11 +298,16 @@ unit_tests:
       The same property cannot be sold twice by the same agent on the same day under the same
       method. Whatever the two figures mean, they describe one event.
     model: int__listing_outcome_clustered
+    overrides:
+      macros:
+        is_incremental: false
     given:
       - input: ref('int__listing_outcome')
         rows:
           - {suburb_key: kew, street_address_key: "2 bay rd", rooms: 3, type_code: h, method_code: S, agent_key: nelson, sale_price: 900000, bid_amount: , event_date: "2017-04-01", source_row: 1}
           - {suburb_key: kew, street_address_key: "2 bay rd", rooms: 3, type_code: h, method_code: S, agent_key: nelson, sale_price: 910000, bid_amount: , event_date: "2017-04-01", source_row: 2}
+      - input: ref('stg__listing_outcome')
+        rows: []
     expect:
       rows:
         - {event_date: "2017-04-01", sale_price: 900000, dq_status: ok}
@@ -263,12 +318,17 @@ unit_tests:
       A duplicate on day one must not become the lag anchor for the following week, or the
       recapture gap would be measured from the wrong row.
     model: int__listing_outcome_clustered
+    overrides:
+      macros:
+        is_incremental: false
     given:
       - input: ref('int__listing_outcome')
         rows:
           - {suburb_key: kew, street_address_key: "1 acacia pl", rooms: 2, type_code: u, method_code: VB, agent_key: jellis, sale_price: , bid_amount: 750000, event_date: "2017-12-16", source_row: 1}
           - {suburb_key: kew, street_address_key: "1 acacia pl", rooms: 2, type_code: u, method_code: VB, agent_key: jellis, sale_price: , bid_amount: , event_date: "2017-12-16", source_row: 2}
           - {suburb_key: kew, street_address_key: "1 acacia pl", rooms: 2, type_code: u, method_code: VB, agent_key: jellis, sale_price: , bid_amount: 750000, event_date: "2017-12-23", source_row: 3}
+      - input: ref('stg__listing_outcome')
+        rows: []
     expect:
       rows:
         - {event_date: "2017-12-16", dq_status: ok, recapture_rank: 1}
@@ -282,11 +342,16 @@ unit_tests:
       Ordering by source_row cannot decide this - row 5 of a small delta against row 40,000
       of the historical load says nothing about which is current.
     model: int__listing_outcome_clustered
+    overrides:
+      macros:
+        is_incremental: false
     given:
       - input: ref('int__listing_outcome')
         rows:
           - {suburb_key: kew, street_address_key: "2 bay rd", rooms: 3, type_code: h, method_code: SP, agent_key: nelson, sale_price: , bid_amount: , event_date: "2001-06-15", source_row: 40000, load_started_at: "2001-07-01 06:00:00"}
           - {suburb_key: kew, street_address_key: "2 bay rd", rooms: 3, type_code: h, method_code: SP, agent_key: nelson, sale_price: 450000, bid_amount: , event_date: "2001-06-15", source_row: 5, load_started_at: "2026-08-28 06:00:00"}
+      - input: ref('stg__listing_outcome')
+        rows: []
     expect:
       rows:
         - {event_date: "2001-06-15", sale_price: 450000, dq_status: ok}
@@ -298,11 +363,16 @@ unit_tests:
       own current state, and silently preferring the older figure would mean the warehouse
       disagreed with the source forever.
     model: int__listing_outcome_clustered
+    overrides:
+      macros:
+        is_incremental: false
     given:
       - input: ref('int__listing_outcome')
         rows:
           - {suburb_key: kew, street_address_key: "2 bay rd", rooms: 3, type_code: h, method_code: SP, agent_key: nelson, sale_price: 450000, bid_amount: , event_date: "2001-06-15", source_row: 1, load_started_at: "2001-07-01 06:00:00"}
           - {suburb_key: kew, street_address_key: "2 bay rd", rooms: 3, type_code: h, method_code: SP, agent_key: nelson, sale_price: , bid_amount: , event_date: "2001-06-15", source_row: 1, load_started_at: "2026-08-28 06:00:00"}
+      - input: ref('stg__listing_outcome')
+        rows: []
     expect:
       rows:
         - {event_date: "2001-06-15", sale_price: , dq_status: ok}
@@ -313,11 +383,16 @@ unit_tests:
       Recency cannot discriminate inside a single snapshot, so the informativeness rule
       remains the tie-break - this is the 2/9 Tintern Av case from the original file.
     model: int__listing_outcome_clustered
+    overrides:
+      macros:
+        is_incremental: false
     given:
       - input: ref('int__listing_outcome')
         rows:
           - {suburb_key: toorak, street_address_key: "2/9 tintern av", rooms: 2, type_code: u, method_code: SP, agent_key: marshall, sale_price: , bid_amount: , event_date: "2016-09-24", source_row: 1, load_started_at: "2026-08-28 06:00:00"}
           - {suburb_key: toorak, street_address_key: "2/9 tintern av", rooms: 2, type_code: u, method_code: SP, agent_key: marshall, sale_price: 851000, bid_amount: , event_date: "2016-09-24", source_row: 2, load_started_at: "2026-08-28 06:00:00"}
+      - input: ref('stg__listing_outcome')
+        rows: []
     expect:
       rows:
         - {event_date: "2016-09-24", sale_price: 851000, dq_status: ok}

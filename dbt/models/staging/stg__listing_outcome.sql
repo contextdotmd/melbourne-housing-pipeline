@@ -1,6 +1,15 @@
-{{ config(materialized='view') }}
+{{ config(
+    materialized = 'incremental',
+    incremental_strategy = 'append',
+    on_schema_change = 'fail',
+) }}
 
 -- Landing rows in domain vocabulary, values normalised, cardinality untouched.
+--
+-- Append-only: this is the warehouse's copy of the immutable event log, and it accumulates
+-- every load ever ingested. Nothing here is ever updated or deleted, which is what lets the
+-- deduplication layer downstream see a property's complete history when it reprocesses.
+-- Correcting a record means a NEW row arriving in a later load, not this one changing.
 --
 -- Keys are lowercased and display forms kept alongside them, because the source spells the
 -- same suburb and the same agency more than one way (Croydon/croydon, VICPROP/VICProp).
@@ -49,3 +58,9 @@ select
 from {{ source('landing', 'listing_outcome') }} as landing
 left join {{ source('landing', 'ingest_receipt') }} as receipt
     on landing._load_id = receipt.load_id
+
+{% if is_incremental() %}
+-- Loads already staged are skipped entirely: appending them twice would double the log and
+-- break the row ledger. This is what makes a re-run of the DAG harmless.
+where landing._load_id not in (select distinct load_id from {{ this }})
+{% endif %}

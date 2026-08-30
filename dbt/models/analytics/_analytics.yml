@@ -92,6 +92,9 @@ unit_tests:
       Three listings, two sold — 0.667, not 1.0. Computing it over sold rows only would make
       every suburb 100% and the metric meaningless.
     model: analytics_suburb_monthly_market
+    overrides:
+      macros:
+        is_incremental: false
     given:
       - input: ref('fact__listing_outcome')
         rows:
@@ -106,6 +109,8 @@ unit_tests:
       - input: ref('dim_suburb')
         rows:
           - {suburb_key: kew, suburb_name: Kew, region_name: "Southern Metropolitan", postcode: "3101", cbd_distance_km: 5.0}
+      - input: ref('stg__listing_outcome')
+        rows: []
     expect:
       rows:
         - {suburb_key: kew, month_start: "2017-04-01", listings: 3, sales: 2, clearance_rate: 0.6666666666666666}
@@ -115,6 +120,9 @@ unit_tests:
       There is no previous month to compare against. Zero would read as "no change", which is
       a different and false claim.
     model: analytics_suburb_monthly_market
+    overrides:
+      macros:
+        is_incremental: false
     given:
       - input: ref('fact__listing_outcome')
         rows:
@@ -127,6 +135,8 @@ unit_tests:
       - input: ref('dim_suburb')
         rows:
           - {suburb_key: kew, suburb_name: Kew, region_name: "Southern Metropolitan", postcode: "3101", cbd_distance_km: 5.0}
+      - input: ref('stg__listing_outcome')
+        rows: []
     expect:
       rows:
         - {month_start: "2017-04-01", median_sale_price: 900000, median_sale_price_mom_change: }
@@ -137,6 +147,9 @@ unit_tests:
       The reason dim_date is a generated spine. Without the empty April row, LAG in May would
       reach back to March and report a month-on-month change across a two-month gap.
     model: analytics_suburb_monthly_market
+    overrides:
+      macros:
+        is_incremental: false
     given:
       - input: ref('fact__listing_outcome')
         rows:
@@ -150,6 +163,8 @@ unit_tests:
       - input: ref('dim_suburb')
         rows:
           - {suburb_key: kew, suburb_name: Kew, region_name: "Southern Metropolitan", postcode: "3101", cbd_distance_km: 5.0}
+      - input: ref('stg__listing_outcome')
+        rows: []
     expect:
       rows:
         - {month_start: "2017-03-01", listings: 1, sales: 1, clearance_rate: 1.0}
@@ -163,6 +178,9 @@ unit_tests:
       excluded upstream, giving a column that is mathematically incapable of being non-zero.
       is_auction comes from the method dimension, so it survives the price filter.
     model: analytics_agent_performance
+    overrides:
+      macros:
+        is_incremental: false
     given:
       - input: ref('fact__listing_outcome')
         rows:
@@ -180,6 +198,8 @@ unit_tests:
       - input: ref('dim_agent')
         rows:
           - {agent_key: nelson, agent_name: Nelson}
+      - input: ref('stg__listing_outcome')
+        rows: []
     expect:
       rows:
         - {agent_key: nelson, month_start: "2017-04-01", listings: 3, sales: 2, gmv: 1700000, auction_share: 0.6666666666666666, region_gmv_share: 1.0, rank_by_gmv_in_region: 1}
@@ -188,6 +208,9 @@ unit_tests:
   - name: repeat_sales_needs_two_disclosed_sales
     description: A single sale, or a second outcome that did not sell, is not a repeat sale.
     model: analytics_repeat_sales
+    overrides:
+      macros:
+        is_incremental: false
     given:
       - input: ref('fact__listing_outcome')
         rows:
@@ -204,6 +227,8 @@ unit_tests:
       - input: ref('dim_suburb')
         rows:
           - {suburb_key: kew, suburb_name: Kew, region_name: "Southern Metropolitan"}
+      - input: ref('stg__listing_outcome')
+        rows: []
     expect:
       rows:
         - {property_key: p1, previous_sale_price: 800000, sale_price: 1000000, days_held: 735}
@@ -215,6 +240,9 @@ unit_tests:
       this pair never reaches the fact — but if it ever did, it must not be reported as a
       735-day-style holding period at 0% return.
     model: analytics_repeat_sales
+    overrides:
+      macros:
+        is_incremental: false
     given:
       - input: ref('fact__listing_outcome')
         rows:
@@ -228,12 +256,17 @@ unit_tests:
       - input: ref('dim_suburb')
         rows:
           - {suburb_key: kew, suburb_name: Kew, region_name: "Southern Metropolitan"}
+      - input: ref('stg__listing_outcome')
+        rows: []
     expect:
       rows: []
 
   # -------------------------------------------------------------- vendor expectation gap
   - name: a_bid_followed_by_a_later_sale_becomes_a_gap
     model: analytics_vendor_expectation_gap
+    overrides:
+      macros:
+        is_incremental: false
     given:
       - input: ref('fact__listing_outcome')
         rows:
@@ -245,6 +278,8 @@ unit_tests:
       - input: ref('dim_suburb')
         rows:
           - {suburb_key: balwyn, suburb_name: Balwyn, region_name: "Southern Metropolitan"}
+      - input: ref('stg__listing_outcome')
+        rows: []
     expect:
       rows:
         - {property_key: p1, bid_amount: 2700000, eventual_sale_price: 2900000, gap_amount: 200000, days_to_sale: 91}
@@ -252,6 +287,9 @@ unit_tests:
   - name: a_sale_before_the_bid_is_not_a_gap
     description: Direction matters — the bid must precede the sale for the comparison to mean anything.
     model: analytics_vendor_expectation_gap
+    overrides:
+      macros:
+        is_incremental: false
     given:
       - input: ref('fact__listing_outcome')
         rows:
@@ -263,5 +301,7 @@ unit_tests:
       - input: ref('dim_suburb')
         rows:
           - {suburb_key: balwyn, suburb_name: Balwyn, region_name: "Southern Metropolitan"}
+      - input: ref('stg__listing_outcome')
+        rows: []
     expect:
       rows: []

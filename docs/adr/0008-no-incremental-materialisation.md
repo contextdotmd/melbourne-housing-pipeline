@@ -1,8 +1,14 @@
 ---
-status: accepted — conditional on the feed being a cumulative snapshot
+status: superseded by ADR-0011
 ---
 
 # Full refresh, because this feed is a cumulative snapshot
+
+> **Superseded by [ADR-0011](0011-incremental-by-layer.md).** The reasoning below holds for a
+> cumulative snapshot, which is what the supplied file is. It was superseded once the intended
+> production feed was clarified as daily files carrying new, repeated and corrected records —
+> under which the conclusion inverts. Kept because the argument is still the right one for the
+> pattern it describes, and because the reversal is the useful part of the record.
 
 Every model is rebuilt in full on each run. At 63,023 rows the whole warehouse builds in about
 11 seconds, so incrementality would buy nothing on compute while introducing watermark logic,

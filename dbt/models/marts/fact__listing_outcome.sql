@@ -1,4 +1,13 @@
-{{ config(materialized='table') }}
+{{ config(
+    materialized = 'incremental',
+    unique_key = 'property_key',
+    incremental_strategy = 'delete+insert',
+    on_schema_change = 'sync_all_columns',
+) }}
+
+{#- dbt cannot infer a ref() that only appears inside a conditional, so the scope
+    macro's dependency on staging is declared explicitly. -#}
+-- depends_on: {{ ref('stg__listing_outcome') }}
 
 -- One row per genuine listing outcome (ADR-0004).
 --
@@ -41,3 +50,12 @@ select
     source_row
 
 from {{ ref('int__listing_outcome_deduped') }}
+
+{% if is_scoped_run() %}
+-- Same unit of work as the layer above: whole properties in, whole properties out. Keyed on
+-- the property rather than listing_outcome_key so that an outcome which has just become a
+-- restatement is actually removed, instead of lingering because nothing replaced it.
+where (suburb_key, street_address_key) in (
+    select suburb_key, street_address_key from ({{ affected_properties() }}) as scope
+)
+{% endif %}

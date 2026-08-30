@@ -1,6 +1,13 @@
-{{ config(materialized='view') }}
+{{ config(materialized='table') }}
 
 -- Agent x region x month.
+--
+-- NOT INCREMENTAL, deliberately. This is an aggregate: its size is bounded by dimension
+-- cardinality (suburbs x months, agents x region-months), not by event volume, so it stays
+-- small while the fact grows. Making it incremental was tried and reverted — an aggregate
+-- that denormalises a dimension attribute goes stale when that attribute changes, and
+-- extending the date spine silently invalidates every series. Both were caught by
+-- tests/equivalence_harness.py. Paying that complexity to rebuild ~13k rows is a bad trade.
 --
 -- Auction share is derived from dim_sale_method.is_auction, carried onto the fact. Deriving
 -- it instead from a single Method code risks a metric that is mathematically incapable of
@@ -24,8 +31,7 @@ with enriched as (
     inner join {{ ref('dim_agent') }}  as agent    on fact.agent_key = agent.agent_key
     inner join {{ ref('dim_suburb') }} as suburb   on fact.suburb_key = suburb.suburb_key
     inner join {{ ref('dim_date') }}   as calendar on fact.event_date = calendar.date_day
-
-),
+    ),
 
 aggregated as (
 

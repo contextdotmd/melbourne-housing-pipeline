@@ -4,9 +4,15 @@
 -- attributes of the suburb, not of a sale: verified across all 377 with zero violations.
 -- They are taken with min() purely for determinism — every row within a suburb agrees.
 
-with canonical as (
+with scoped as (
 
-    {{ canonical_name(ref('int__listing_outcome_deduped'), 'suburb_key', 'suburb_name') }}
+    select * from {{ ref('int__listing_outcome_deduped') }}
+
+),
+
+canonical as (
+
+    {{ canonical_name('scoped', 'suburb_key', 'suburb_name') }}
 
 ),
 
@@ -19,7 +25,7 @@ attributes as (
         min(council_area)    as council_area,
         min(cbd_distance_km) as cbd_distance_km,
         min(property_count)  as property_count
-    from {{ ref('int__listing_outcome_deduped') }}
+    from scoped
     group by suburb_key
 
 )

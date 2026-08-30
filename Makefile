@@ -9,7 +9,7 @@ DUCKDB   := data/warehouse.duckdb
 SOURCE   := data/raw/MELBOURNE_HOUSE_PRICES_LESS.csv
 
 .DEFAULT_GOAL := help
-.PHONY: help setup setup-airflow ingest build test test-dag test-unit all docs ui sql airflow clean
+.PHONY: help setup setup-airflow ingest build test test-dag test-unit test-equivalence all docs ui sql airflow clean
 
 help: ## Show this help
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk -F':.*?## ' '{printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
@@ -38,6 +38,9 @@ test: ## Python tests, then the full dbt suite
 test-unit: ## dbt unit tests only (no warehouse data required)
 	$(DBT) test $(DBT_ARGS) --select test_type:unit
 
+test-equivalence: ## Prove the incremental build matches a full rebuild, table by table
+	uv run python tests/equivalence_harness.py
+
 test-dag: ## Airflow DAG structure tests (needs `make setup-airflow` first)
 	AIRFLOW_HOME="$(PWD)/airflow" PYTHONPATH="$(PWD)/src" .venv-airflow/bin/pytest tests/test_dag.py -q
 
@@ -56,7 +59,7 @@ sql: ## Open a DuckDB SQL prompt
 	duckdb $(DUCKDB)
 
 airflow: ## Run Airflow locally, then trigger melbourne_housing_pipeline
-	AIRFLOW_HOME="$(PWD)/airflow" .venv-airflow/bin/airflow standalone
+	PATH="$(PWD)/.venv-airflow/bin:$(PATH)" AIRFLOW_HOME="$(PWD)/airflow" airflow standalone
 
 clean: ## Remove build outputs and derived data (keeps data/raw)
 	rm -rf dbt/target dbt/dbt_packages dbt/logs

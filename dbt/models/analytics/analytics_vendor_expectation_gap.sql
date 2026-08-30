@@ -1,6 +1,13 @@
-{{ config(materialized='view') }}
+{{ config(materialized='table') }}
 
 -- What vendors hoped for against what the market paid.
+--
+-- NOT INCREMENTAL, deliberately. This is an aggregate: its size is bounded by dimension
+-- cardinality (suburbs x months, agents x region-months), not by event volume, so it stays
+-- small while the fact grows. Making it incremental was tried and reverted — an aggregate
+-- that denormalises a dimension attribute goes stale when that attribute changes, and
+-- extending the date spine silently invalidates every series. Both were caught by
+-- tests/equivalence_harness.py. Paying that complexity to rebuild ~13k rows is a bad trade.
 --
 -- A property is passed in or vendor-bid at a known figure, then later sells at a known price.
 -- Computable only because the figure on an unsold outcome is preserved as bid_amount rather
@@ -16,8 +23,7 @@ with bids as (
     from {{ ref('fact__listing_outcome') }}
     where not is_sold
       and bid_amount is not null
-
-),
+      ),
 
 sales as (
 
@@ -28,8 +34,7 @@ sales as (
     from {{ ref('fact__listing_outcome') }}
     where is_sold
       and sale_price is not null
-
-),
+      ),
 
 -- The first sale AFTER each bid. Direction matters: a sale that preceded the bid says nothing
 -- about whether that vendor's expectation was met.

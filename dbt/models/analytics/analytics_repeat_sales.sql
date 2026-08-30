@@ -1,6 +1,13 @@
-{{ config(materialized='view') }}
+{{ config(materialized='table') }}
 
 -- Properties that sold twice with a disclosed price: holding period and annualised return.
+--
+-- NOT INCREMENTAL, deliberately. This is an aggregate: its size is bounded by dimension
+-- cardinality (suburbs x months, agents x region-months), not by event volume, so it stays
+-- small while the fact grows. Making it incremental was tried and reverted — an aggregate
+-- that denormalises a dimension attribute goes stale when that attribute changes, and
+-- extending the date spine silently invalidates every series. Both were caught by
+-- tests/equivalence_harness.py. Paying that complexity to rebuild ~13k rows is a bad trade.
 --
 -- Only trustworthy because the re-scrape recaptures were collapsed upstream. Left in, the
 -- republished December snapshots would surface here as thousands of "resales" seven days
@@ -16,8 +23,7 @@ with disclosed_sales as (
     from {{ ref('fact__listing_outcome') }}
     where is_sold
       and sale_price is not null
-
-),
+      ),
 
 sequenced as (
 

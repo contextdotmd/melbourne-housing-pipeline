@@ -1,7 +1,11 @@
-{{ config(materialized='table') }}
+{{ config(materialized='view') }}
 
 -- One row per genuine listing outcome: neither a restatement of another row nor a
--- republication of one. Complementary to quarantine_recaptured_listing by construction.
+-- republication of one.
+--
+-- A view, deliberately. The classification is maintained incrementally one layer up, so this
+-- and the quarantine are complementary filters over the same table — they cannot drift, and
+-- neither needs its own incremental logic to stay in step with the other.
 
 select
     business_signature,

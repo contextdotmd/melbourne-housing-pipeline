@@ -1,4 +1,13 @@
-{{ config(materialized='view') }}
+{{ config(
+    materialized = 'incremental',
+    unique_key = ['suburb_key', 'street_address_key'],
+    incremental_strategy = 'delete+insert',
+    on_schema_change = 'sync_all_columns',
+) }}
+
+{#- dbt cannot infer a ref() that only appears inside a conditional, so the scope
+    macro's dependency on staging is declared explicitly. -#}
+-- depends_on: {{ ref('stg__listing_outcome') }}
 
 -- Classify every row as good, an exact duplicate, a restatement, or a recapture. One
 -- expression, so the surviving rows and the quarantined rows are complementary by
@@ -24,10 +33,39 @@
 -- Order matters. Restatements are resolved first and excluded from the recapture chain: a
 -- duplicate sitting on day one would otherwise become the lag anchor for the following week,
 -- and the recapture gap would be measured from the wrong row.
+--
+-- INCREMENTAL BEHAVIOUR
+-- Both rules are windows over a property's history, so a partial view of a property gives a
+-- wrong answer. The unit of work is therefore the whole property: every property touched by
+-- the incoming loads is deleted and rebuilt from its complete history, while untouched
+-- properties are not read at all.
+--
+-- delete+insert on the property, not the row. A row-level merge would leave behind rows that
+-- should now be quarantined — a record that used to be `ok` and is superseded by a later
+-- restatement must DISAPPEAR from the survivor set, and merge has no way to express that.
 
 {% set window_days = var('recapture_window_days') %}
 
-with content_hashed as (
+{% if is_scoped_run() %}
+with in_scope as (
+
+    -- Full history of the properties this run touches. Not a date window: a restatement
+    -- carries its original event date, so a window anchored on "recent" would miss it.
+    select history.*
+    from {{ ref('int__listing_outcome') }} as history
+    inner join ({{ affected_properties() }}) as affected
+        using (suburb_key, street_address_key)
+
+),
+{% else %}
+with in_scope as (
+
+    select * from {{ ref('int__listing_outcome') }}
+
+),
+{% endif %}
+
+content_hashed as (
 
     select
         *,
@@ -37,7 +75,7 @@ with content_hashed as (
         -- directly: joining on a nullable column silently drops rows, because NULL = NULL is
         -- false. generate_surrogate_key substitutes a sentinel for nulls, so the join holds.
         {{ dbt_utils.generate_surrogate_key(['load_id', 'source_row']) }} as row_key
-    from {{ ref('int__listing_outcome') }}
+    from in_scope
 
 ),
 

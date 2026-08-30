@@ -55,6 +55,9 @@ unit_tests:
       Croydon and croydon are one suburb. If the key were case-sensitive each spelling would
       become its own dimension member and split that suburb's numbers in two.
     model: stg__listing_outcome
+    overrides:
+      macros:
+        is_incremental: false
     given:
       - input: source('landing', 'listing_outcome')
         rows:
@@ -69,6 +72,9 @@ unit_tests:
 
   - name: agent_case_variants_share_one_key
     model: stg__listing_outcome
+    overrides:
+      macros:
+        is_incremental: false
     given:
       - input: source('landing', 'listing_outcome')
         rows:
@@ -86,6 +92,9 @@ unit_tests:
   - name: codes_are_case_folded_to_a_canonical_form
     description: Method codes fold up, type codes fold down — matching how the source writes them.
     model: stg__listing_outcome
+    overrides:
+      macros:
+        is_incremental: false
     given:
       - input: source('landing', 'listing_outcome')
         rows:
@@ -103,6 +112,9 @@ unit_tests:
       23% of the source has no price. Defaulting it to zero here would be invisible and would
       drag every downstream average toward zero.
     model: stg__listing_outcome
+    overrides:
+      macros:
+        is_incremental: false
     given:
       - input: source('landing', 'listing_outcome')
         rows:
@@ -120,6 +132,9 @@ unit_tests:
       The row ledger anchors on this. Four rows in, four rows out, including two that are
       byte-identical — deduplication is the intermediate layer's job, not staging's.
     model: stg__listing_outcome
+    overrides:
+      macros:
+        is_incremental: false
     given:
       - input: source('landing', 'listing_outcome')
         rows:
