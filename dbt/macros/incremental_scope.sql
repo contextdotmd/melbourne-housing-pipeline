@@ -86,7 +86,11 @@
   `partitioned_by` selects how the partition is expressed: 'property_key' for models carrying
   the hash, 'property_parts' for those carrying the columns it hashes.
 -#}
-    {%- if is_incremental() and var('load_ids', none) -%}
+    {%- if not is_incremental() -%}
+        {#- First build or --full-refresh: the table is being created, nothing to remove. -#}
+        select 1 where false
+    {%- elif var('load_ids', none) -%}
+        {#- Scoped run: replace only the partitions the incoming loads touch. -#}
         {%- if partitioned_by == 'property_parts' -%}
             delete from {{ this }}
             where (suburb_key, street_address_key) in (
@@ -97,7 +101,11 @@
             where property_key in ({{ affected_property_keys() }})
         {%- endif -%}
     {%- else -%}
-        {#- nothing to remove on a first build or a full refresh -#}
-        select 1 where false
+        {#-
+          Incremental table, but the caller named no loads - a manual `dbt build`, or CI.
+          The model body then selects the whole history, so every partition is in scope and
+          the table is replaced wholesale. Without this the append would simply double it.
+        -#}
+        delete from {{ this }}
     {%- endif -%}
 {% endmacro %}
