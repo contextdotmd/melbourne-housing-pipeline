@@ -30,15 +30,6 @@ Five questions, and the grain each one needs. Everything downstream serves these
 | 4   | How far apart are what vendors want and what the market pays?             | bid → later sale       | `analytics_vendor_expectation_gap` |
 | 5   | What did we exclude, and does it reconcile to source?                     | fact + quarantine      | `quarantine_recaptured_listing`    |
 
-
-Two of these drove the model. **Clearance rate is sales ÷ all outcomes**, so the fact keeps
-unsold listings — filtering to sales destroys the denominator. And question 4 only exists
-because the bid figure on unsold rows is preserved as its own measure.
-
-**A finding out of question 4:** across 211 bid-then-sale pairs (210 properties passed in at a
-known figure and later sold), the market paid a **median 3.9% above** the highest bid, and 143
-of 211 sold above it. Reserves in this market were, on the whole, a little pessimistic.
-
 ---
 
 
@@ -64,26 +55,6 @@ erDiagram
     SUBURB           }o--|| COUNCIL_AREA      : "sits within"
     COUNCIL_AREA     }o--|| REGION            : "sits within"
 ```
-
-
-
-The pivot is `CAMPAIGN_OUTCOME ||--o| TRANSACTION`: **a campaign concluding is not the same
-event as a property changing hands.** The source gives one row per campaign outcome, so that
-is the fact grain — a superset of "sale", which is what makes clearance computable.
-
-It also means `Price` is overloaded, because the bid and the consideration share one column:
-
-
-|                               | price present | price NULL |
-| ----------------------------- | ------------- | ---------- |
-| **sold** (`S SP SA SN PN SS`) | 37,469        | 9,324      |
-| **not sold** (`PI VB W`)      | **10,964**    | 5,266      |
-
-
-Those 10,964 rows carry a highest or vendor bid, not consideration paid — `AVG(price)` is ~23%
-contaminated and returns a plausible wrong number rather than a null. So the warehouse has no
-column called `price`. It has `sale_price` and `bid_amount`, mutually exclusive, with tests
-asserting no row populates both.
 
 Full entity mapping — what the source keeps, collapses and omits — in
 [docs/data-model.md](docs/data-model.md).
