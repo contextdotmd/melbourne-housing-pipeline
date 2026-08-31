@@ -4,8 +4,8 @@ status: accepted
 
 # Airflow owns phases, dbt owns the model graph
 
-The DAG is deliberately coarse — `ingest → dbt_build → dq_gate → notify` — rather than
-exploding each dbt model into its own Airflow task. dbt already derives the model-level
+The DAG is deliberately coarse — `ingest → dbt_build → dq_gate`, with failure notification as
+a task-level callback — rather than exploding each dbt model into its own Airflow task. dbt already derives the model-level
 dependency graph from `ref()`; mirroring it into Airflow would maintain the same graph in two
 places, and only one of them fails loudly when they diverge.
 

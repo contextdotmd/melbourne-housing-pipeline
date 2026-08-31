@@ -14,6 +14,7 @@ Incrementality is applied **per layer, according to what makes that layer grow**
 | Layer | Strategy | Unit of work | Why |
 |---|---|---|---|
 | `stg__listing_outcome` | `append` | the load | The immutable event log. Loads already staged are skipped, so a re-run is harmless |
+| `int__listing_outcome` | table | — | The deliberate exception to the volume rule: it grows with staging, but it is a windowless row-for-row projection (code decode, measure split), so its rebuild is one linear scan. Scoping it by property would need the same affected-property plumbing as the clustered model for no window-correctness gain — complexity spent where nothing was at risk |
 | `int__listing_outcome_clustered` | `delete+insert` | **property** | Both dedup rules are windows partitioned by a key containing the property |
 | `int__..._deduped`, `quarantine` | view | — | Complementary filters over the model above; they cannot drift and need no logic of their own |
 | `fact__listing_outcome` | `delete+insert` | **property** | 1:1 with the deduped view, so the same unit applies |

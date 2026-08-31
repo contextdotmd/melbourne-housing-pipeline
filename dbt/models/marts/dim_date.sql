@@ -2,7 +2,7 @@
 
 -- A contiguous calendar spine across the observed range, NOT the distinct dates in the data.
 --
--- Only 112 days carry activity across nearly three years. Built from observed dates, a quiet
+-- Only 108 days carry activity across nearly three years. Built from observed dates, a quiet
 -- month would simply not exist, and LAG in the month-on-month calculations would silently
 -- compare non-adjacent months while looking entirely correct.
 --

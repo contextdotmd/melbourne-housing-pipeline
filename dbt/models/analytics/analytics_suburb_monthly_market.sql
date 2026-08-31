@@ -10,7 +10,7 @@
 -- tests/equivalence_harness.py. Paying that complexity to rebuild ~13k rows is a bad trade.
 --
 -- Built over a complete grid of suburbs and calendar months, not just the months that saw
--- activity. Only 112 days in three years carry any, so aggregating observed months alone
+-- activity. Only 108 days in three years carry any, so aggregating observed months alone
 -- would let LAG compare non-adjacent months while looking entirely correct. That is what
 -- dim_date is for.
 --
@@ -81,8 +81,10 @@ select
         rows between 2 preceding and current row
     )                                                   as median_sale_price_3m_avg,
     lag(clearance_rate) over w                          as clearance_rate_prev_month,
+    -- No tie-break column: with one, every rank is unique and equal volumes could never
+    -- share a rank.
     dense_rank() over (
-        partition by month_start, region_name order by listings desc, suburb_key
+        partition by month_start, region_name order by listings desc
     )                                                   as rank_by_listings_in_region
 from joined
 window w as (partition by suburb_key order by month_start)

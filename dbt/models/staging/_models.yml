@@ -43,6 +43,19 @@ models:
         tests: [not_null]
       - name: postcode
         tests: [not_null]
+      - name: load_id
+        description: >
+          Links the row to its ingest receipt. A null here would poison the incremental
+          skip-already-staged filter, so it is asserted rather than assumed.
+        tests: [not_null]
+      - name: source_row
+        tests: [not_null]
+      - name: load_started_at
+        description: >
+          Ingestion time from the receipt — the only thing that orders one load against
+          another. A null would silently lose restatement survivorship (survivors sort
+          nulls last), so a landing partition staged without its receipt fails the build.
+        tests: [not_null]
       - name: reported_price
         description: >
           The source Price column, still overloaded — it is a sale price on some rows and a

@@ -123,14 +123,14 @@ would need to change.
 
 | Entity | Grain — one row per… | Count | Type |
 |---|---|---|---|
-| **Listing outcome** | campaign result for one property on one event date | 59,821 | fact |
-| **Property** | dwelling, identified by suburb + street address | 58,715 | dimension |
+| **Listing outcome** | campaign result for one property on one event date | 59,816 | fact |
+| **Property** | dwelling, identified by suburb + street address | 58,696 | dimension |
 | **Suburb** | suburb | **377** | dimension |
 | **Agent** | selling agency | **470** | dimension |
 | **Date** | calendar day across the observed range | ~1,000 | dimension (generated spine) |
 | **Sale method** | source `Method` code | 10 | dimension (seed) |
 | **Property type** | source `Type` code | 6 | dimension (seed) |
-| **Recaptured listing** | row excluded as a republished snapshot | 3,202 | quarantine |
+| **Recaptured listing** | row excluded as a republication, restatement or exact duplicate | 3,207 | quarantine |
 
 Suburb and agent counts are **entity** counts, not distinct-string counts. The source contains
 380 suburb spellings and 476 agent spellings; case variants (`Croydon`/`croydon`,
@@ -138,7 +138,7 @@ Suburb and agent counts are **entity** counts, not distinct-string counts. The s
 value and choose the display spelling by frequency, tie-broken alphabetically so the choice is
 deterministic across rebuilds.
 
-Fact and quarantine counts are measured, not estimated: 59,821 + 3,202 = 63,023.
+Fact and quarantine counts are measured, not estimated: 59,816 + 3,207 = 63,023.
 
 ### Physical relationships
 
@@ -213,7 +213,7 @@ erDiagram
 
 - A **Suburb** contains **0..\*** Properties; a Property sits in **exactly one** Suburb
   (verified: 0 properties span two suburbs).
-- A **Property** has **1..\*** Listing Outcomes. 56,818 have exactly one; 1,897 have more.
+- A **Property** has **1..\*** Listing Outcomes. 57,604 have exactly one; 1,092 have more.
 - An **Agent** markets **0..\*** Listing Outcomes. A Property is *not* tied to one agent —
   573 properties were marketed by more than one over time.
 - Each Listing Outcome has **exactly one** Sale Method, Property Type, Date, Property, Suburb
@@ -223,7 +223,7 @@ erDiagram
 ## Why `rooms` and `type` are not attributes of the Property
 
 They look like property characteristics, but the data disagrees: across properties with more
-than one outcome, **`rooms` differs for 112** and **`type` differs for 72** — for example
+than one outcome, **`rooms` differs for 110** and **`type` differs for 71** — for example
 `2/73 Bignell Rd, Bentleigh East` is listed once as a unit and once as a townhouse.
 
 They are therefore recorded **as at the outcome**, not as facts about the dwelling.
@@ -235,7 +235,7 @@ rewrite history for the other outcome.
 ## Why the fact carries `suburb_key` as well as `property_key`
 
 Suburb is reachable through `dim_property`, so this is a deliberate denormalisation: suburb is
-the primary analysis grain (question 1), and routing every suburb query through the 58,715-row
+the primary analysis grain (question 1), and routing every suburb query through the 58,696-row
 property dimension is both slower and easier to get wrong. A singular test asserts
 `fact.suburb_key = dim_property.suburb_key` for every row, so the redundancy cannot drift.
 

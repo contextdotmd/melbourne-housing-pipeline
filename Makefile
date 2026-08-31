@@ -39,7 +39,7 @@ test-equivalence: ## Prove the incremental build matches a full rebuild, table b
 	uv run python tests/equivalence_harness.py
 
 test-dag: ## Airflow DAG structure tests (needs `make setup-airflow` first)
-	AIRFLOW_HOME="$(PWD)/airflow" PYTHONPATH="$(PWD)/src" .venv-airflow/bin/pytest tests/test_dag.py -q
+	AIRFLOW_HOME="$(CURDIR)/airflow" PYTHONPATH="$(CURDIR)/src" .venv-airflow/bin/pytest tests/test_dag.py -q
 
 all: ingest build ## Ingest then build the warehouse — the whole pipeline
 
@@ -56,7 +56,7 @@ sql: ## Open a DuckDB SQL prompt
 	duckdb $(DUCKDB)
 
 airflow: ## Run Airflow locally, then trigger melbourne_housing_pipeline
-	PATH="$(PWD)/.venv-airflow/bin:$(PATH)" AIRFLOW_HOME="$(PWD)/airflow" airflow standalone
+	PATH="$(CURDIR)/.venv-airflow/bin:$(PATH)" AIRFLOW_HOME="$(CURDIR)/airflow" airflow standalone
 
 clean: ## Remove build outputs and derived data (keeps data/raw)
 	rm -rf dbt/target dbt/dbt_packages dbt/logs

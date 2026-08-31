@@ -11,7 +11,9 @@
 --                          different date.
 
 select
-    {{ dbt_utils.generate_surrogate_key(['business_signature', 'event_date', 'source_row']) }}
+    -- Row identity, not content identity: repeated snapshot loads can quarantine the same
+    -- (signature, date, source_row) once per load, so only the physical row is unique.
+    {{ dbt_utils.generate_surrogate_key(['load_id', 'source_row']) }}
         as quarantine_key,
     dq_status                      as reason,
     business_signature,

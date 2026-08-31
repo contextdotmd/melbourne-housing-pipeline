@@ -24,7 +24,7 @@ models:
   - name: dim_property
     description: >
       One row per dwelling, identified by suburb plus street address. Identity only: `rooms`
-      and `type` differ between outcomes for 112 and 72 properties respectively, so they are
+      and `type` differ between outcomes for 110 and 71 properties respectively, so they are
       recorded as at the outcome rather than as facts about the dwelling.
     columns:
       - name: property_key
@@ -48,7 +48,7 @@ models:
   - name: dim_date
     description: >
       A generated calendar spine covering every day in the observed range — deliberately NOT
-      the distinct dates present in the data. Only 112 days carry activity, so a
+      the distinct dates present in the data. Only 108 days carry activity, so a
       DISTINCT-derived date dimension would omit quiet months entirely and `LAG` would compare
       non-adjacent months while looking perfectly correct.
     columns:
@@ -134,8 +134,8 @@ unit_tests:
 
   - name: a_street_address_in_two_suburbs_is_two_properties
     description: >
-      "14 Moray St" occurs in seven suburbs. Keyed on address alone they would merge into one
-      dwelling and their sale histories would be spliced together.
+      "5 Charles St" occurs in seven suburbs, "14 Moray St" in three. Keyed on address alone
+      they would merge into one dwelling and their sale histories would be spliced together.
     model: dim_property
     overrides:
       macros:

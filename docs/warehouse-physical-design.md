@@ -88,8 +88,9 @@ per affected property is therefore correct for any W comfortably above that.
 
 `incremental_lookback_days` is set to **90**, and — the part that matters —
 `assert_no_cluster_exceeds_lookback.sql` fails the build if any cluster ever grows past it. The
-parameter polices itself, so it cannot silently become too short. It is asserted now, while the
-pipeline is still full-refresh, so the number is known safe *before* anything depends on it.
+parameter polices itself, so it cannot silently become too short. The shipped DuckDB build
+reprocesses whole properties and does not depend on it; asserting it on every build anyway
+means the number is known safe *before* the partition-pruned port relies on it.
 
 ## Two things that grow badly with a long history
 

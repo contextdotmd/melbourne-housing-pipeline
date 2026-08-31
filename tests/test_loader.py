@@ -321,3 +321,130 @@ def test_utf8_bom_does_not_corrupt_the_first_column_name(tmp_path):
     src.write_text("﻿" + HEADER + "\n" + ROW + "\n", encoding="utf-8")
     result = load_csv(src, tmp_path / "out")
     assert result.receipt["header_contract"] == "ok"
+
+
+def test_an_absurdly_large_integer_is_one_rejected_row_not_a_dead_load(tmp_path):
+    """The landing columns are int32; an oversized value must reject the row, not crash the flush."""
+    bad = ROW.replace(",3,h,", ",99999999999999,h,")
+    result = load_csv(write_csv(tmp_path, HEADER, bad, ROW), tmp_path / "out")
+    assert reject_rows(result)[0]["reason"] == "rooms_out_of_range"
+    assert result.receipt["rows_loaded"] == 1
+
+
+def test_nan_and_inf_are_not_prices(tmp_path):
+    """float() parses 'nan' happily. A NaN price passes every equality test and poisons averages."""
+    rows = [ROW.replace(",1490000,", ",nan,"), ROW.replace(",1490000,", ",inf,")]
+    result = load_csv(write_csv(tmp_path, HEADER, *rows), tmp_path / "out")
+    assert [r["reason"] for r in reject_rows(result)] == ["price_not_finite", "price_not_finite"]
+
+
+def test_underscored_and_unicode_digits_are_not_numbers(tmp_path):
+    """int('1_000') and int('٣') both succeed in Python. Neither is a number a CSV should carry."""
+    rows = [ROW.replace(",1490000,", ",1_000,"), ROW.replace(",3,h,", ",٣,h,")]
+    result = load_csv(write_csv(tmp_path, HEADER, *rows), tmp_path / "out")
+    assert [r["reason"] for r in reject_rows(result)] == ["price_not_numeric", "rooms_not_integer"]
+
+
+def test_blank_lines_are_counted_not_silently_swallowed(tmp_path):
+    """A blank line mid-file is a corruption symptom. It must be visible on the receipt."""
+    result = load_csv(write_csv(tmp_path, HEADER, ROW, "", ROW), tmp_path / "out")
+    assert result.receipt["rows_blank"] == 1
+    assert result.receipt["rows_read"] == 2
+    assert result.receipt["rows_read"] == result.receipt["rows_loaded"] + result.receipt["rows_rejected"]
+
+
+def test_reject_raw_line_round_trips_csv_quoting(tmp_path):
+    """A quoted field holding a comma must come back as one field, or the stored line lies."""
+    import csv as csv_module
+
+    quoted = 'Abbotsford,"49 Lithgow St, Unit 2",3,h,nope,S,Jellis,1/04/2017,3067,Northern Metropolitan,4019,3,Yarra City Council'
+    result = load_csv(write_csv(tmp_path, HEADER, quoted), tmp_path / "out")
+
+    (rejected,) = reject_rows(result)
+    (reparsed,) = csv_module.reader([rejected["raw_line"]])
+    assert reparsed[1] == "49 Lithgow St, Unit 2"
+    assert len(reparsed) == 13
+
+
+# --------------------------------------------------------------------------- atomicity
+
+
+def test_a_crash_mid_load_leaves_no_partial_landing_file(tmp_path, monkeypatch):
+    """A partial Parquet file with a valid footer reads as committed data. A crash must leave nothing."""
+    from ingest import loader as loader_module
+
+    def explode(*args, **kwargs):
+        raise RuntimeError("disk gone")
+
+    monkeypatch.setattr(loader_module, "_flush", explode)
+
+    out = tmp_path / "out"
+    with pytest.raises(RuntimeError):
+        load_csv(write_csv(tmp_path, HEADER, ROW), out)
+
+    assert not list(out.rglob("*.parquet"))
+    assert not list(out.rglob("*.inprogress*"))
+    assert not list(out.rglob("*.json"))
+
+
+def test_a_non_utf8_source_fails_as_a_loader_error_and_leaves_nothing(tmp_path):
+    """The orchestrator sees a clean contract failure, not a traceback and a half-written partition."""
+    from ingest.loader import LoaderError
+
+    src = tmp_path / "latin1.csv"
+    src.write_bytes((HEADER + "\n").encode("utf-8") + ROW.replace("Jellis", "Jell\xe9s").encode("latin-1") + b"\n")
+
+    out = tmp_path / "out"
+    with pytest.raises(LoaderError):
+        load_csv(src, out)
+    assert not list(out.rglob("*.parquet"))
+    assert not list(out.rglob("*.inprogress*"))
+
+
+def test_reingesting_identical_bytes_keeps_the_original_receipt(tmp_path):
+    """started_at orders loads for restatement survivorship — a re-send must not re-date the load."""
+    src = write_csv(tmp_path, HEADER, ROW)
+    out = tmp_path / "out"
+
+    first = load_csv(src, out)
+    second = load_csv(src, out)
+
+    assert second.receipt == first.receipt
+
+
+def test_a_corrupt_receipt_is_replaced_not_fatal(tmp_path):
+    """A torn receipt must trigger a clean reload, not wedge every future run of that file."""
+    src = write_csv(tmp_path, HEADER, ROW)
+    out = tmp_path / "out"
+
+    first = load_csv(src, out)
+    first.receipt_path.write_text('{"load_id": "trunc', encoding="utf-8")
+
+    second = load_csv(src, out)
+    assert second.receipt["rows_loaded"] == 1
+    assert json.loads(second.receipt_path.read_text()) == second.receipt
+
+
+def test_a_new_loader_version_reprocesses_identical_bytes(tmp_path):
+    """New coercion rules must never be bypassed by a partition the old loader wrote."""
+    src = write_csv(tmp_path, HEADER, ROW)
+    out = tmp_path / "out"
+
+    first = load_csv(src, out)
+    stale = dict(first.receipt, loader_version="0.0.1")
+    first.receipt_path.write_text(json.dumps(stale), encoding="utf-8")
+
+    second = load_csv(src, out)
+    assert second.receipt["loader_version"] != "0.0.1"
+
+
+def test_a_missing_rejects_file_triggers_a_reload(tmp_path):
+    """The no-op path must hand back outputs that actually exist."""
+    src = write_csv(tmp_path, HEADER, ROW)
+    out = tmp_path / "out"
+
+    first = load_csv(src, out)
+    first.rejects_path.unlink()
+
+    second = load_csv(src, out)
+    assert second.rejects_path.exists()

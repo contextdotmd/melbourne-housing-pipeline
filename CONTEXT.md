@@ -67,7 +67,7 @@ _Avoid_: rejects (that term is reserved for rows the loader could not parse), er
 
 **Property**:
 A dwelling, identified by **Suburb** plus street address. Address alone is not unique —
-"14 Moray St" occurs in seven suburbs.
+"5 Charles St" occurs in seven suburbs, "14 Moray St" in three.
 _Avoid_: house, address, dwelling
 
 **Suburb**:
@@ -102,7 +102,8 @@ _Avoid_: sale date, auction day
 - A **Listing Outcome** belongs to exactly one **Property**, one **Suburb** and one agent
 - A **Listing Outcome** is either a **Sale** or not; **Passed In**, **Vendor Bid** and
   **Withdrawn** are the three non-Sale forms
-- A **Sale** has a **Sale Price** only when its price was disclosed — 9,324 Sales have none
+- A **Sale** has a **Sale Price** only when its price was disclosed — 8,965 Sales in the
+  fact have none (9,324 source rows before deduplication)
 - A non-Sale may still carry a **Bid Amount** — 10,964 do
 - A **Recapture** references an earlier **Listing Outcome**; only the earliest survives into
   the fact, the rest go to **Quarantine**
@@ -145,8 +146,9 @@ _Avoid_: sale date, auction day
   **Recapture** (3,200: same content, *different* date), **Restatement** (5: same date,
   *different* content), and plain **exact duplicate** (2: the same row twice, nothing changed).
 - **Agency identity is not just a casing problem.** `C21` and `Century` are the same agency
-  recorded two ways, and lowercasing cannot merge them. One outcome is affected. No alias list
-  is maintained: inventing one from 470 names would guess more than it resolved.
+  recorded two ways, and lowercasing cannot merge them. The un-merged `Century` member carries
+  37 outcomes against `C21`'s 309. No alias list is maintained: inventing one from 470 names
+  would guess more than it resolved.
 - **A compound agency name is a co-listing.** 42 agency names contain a slash
   (`Buxton/Hodges`, `Fletchers/Fletchers`), covering 126 outcomes. These are two agencies
   sharing one campaign, encoded in one string — so co-listings are recorded, just not
@@ -165,6 +167,6 @@ _Avoid_: sale date, auction day
   choose the display spelling by frequency. Left unnormalised each variant becomes its own
   dimension member, quietly splitting that suburb's or agent's numbers in two.
 - **"property characteristics"** — `Rooms` and `Type` read like attributes of a **Property**,
-  but they differ between outcomes for 112 and 72 properties respectively. Resolved: they are
+  but they differ between outcomes for 110 and 71 properties respectively. Resolved: they are
   recorded as at the **Listing Outcome**, not as facts about the dwelling. See
   [docs/data-model.md](docs/data-model.md).

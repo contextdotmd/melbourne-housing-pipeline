@@ -1,7 +1,9 @@
-# How incrementality would actually work
+# How incrementality actually works
 
-Companion to [ADR-0008](adr/0008-no-incremental-materialisation.md), which explains why the
-pipeline is full-refresh today. This is the design for the day that stops being true.
+Written as the design proposal while the pipeline was still full-refresh
+([ADR-0008](adr/0008-no-incremental-materialisation.md)); steps 2 and 3 below are now
+implemented ([ADR-0011](adr/0011-incremental-by-layer.md)). Kept because it records *why* the
+mechanism is shaped the way it is; where the shipped build differs, the text says so.
 
 ## The short version
 
@@ -11,7 +13,10 @@ Three changes, in this order:
    there is nothing for an incremental model to skip, so this is the change that unlocks the
    other two. **If the source already sends a daily delta file, this step is free** — the
    vendor has done it, and steps 2 and 3 are all that remain. That is the case where building
-   incrementally from day one is the right call (see ADR-0008).
+   incrementally from day one is the right call (see ADR-0008). *Not built: the shipped
+   pipeline treats each delivered file as the delta and scopes the build by its `load_ids`,
+   which is the daily-delta case; row-hash delta detection only becomes necessary if the feed
+   reverts to full snapshots.*
 2. **Reprocess by property, not by date window.** Both deduplication rules partition by a key
    that contains the property, so a property's rows never interact with another property's.
    Pulling a touched property's *entire* history is therefore always correct — and it removes
@@ -122,10 +127,12 @@ deletes never propagate.
 
 ### 3. What the quarantine needs
 
-Today the quarantine is rebuilt wholesale. Incrementally it needs the same
-delete-by-property treatment, or a row reclassified from `suspected_recapture` to `ok` would
-exist in both tables and the row ledger would break. The ledger test is what would catch it,
-which is the argument for keeping that test in the incremental path.
+As shipped, the quarantine is a view over the incrementally-maintained clustered model, so it
+inherits the delete-by-property treatment for free — it cannot drift from the survivor set,
+because both are filters over one classification. Were it materialised separately it would
+need its own delete-by-property step, or a row reclassified from `suspected_recapture` to `ok`
+would exist in both tables and the row ledger would break. The ledger test is what would catch
+it, which is the argument for keeping that test in the incremental path.
 
 ## Worked example: a later file restates a 2001 sale
 

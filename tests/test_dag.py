@@ -69,6 +69,49 @@ def test_the_quality_gate_runs_after_the_build_not_beside_it(dag):
     assert "dbt_build" in dag.get_task("dq_gate").upstream_task_ids
 
 
+def test_the_build_command_renders_to_valid_scoped_vars(dag):
+    """The one templated command that does the actual work. Structure tests cannot see a
+    command that dies at render time, so this renders it with a stub XCom, runs it through
+    bash with the dbt invocation neutered, and asserts the payload dbt would receive is
+    exactly the scoped-load JSON the incremental design relies on."""
+    import json
+    import subprocess
+
+    import jinja2
+
+    class _StubTI:
+        def xcom_pull(self, task_ids=None):
+            return "abc123def456"
+
+    command = dag.get_task("dbt_build").bash_command
+    rendered = jinja2.Environment().from_string(command).render(ti=_StubTI())
+
+    probe = rendered.replace("uv run dbt build", "echo")
+    result = subprocess.run(["bash", "-c", probe], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout.split("--vars ", 1)[1])
+    assert payload == {"load_ids": ["abc123def456"]}
+
+
+def test_the_build_command_fails_fast_on_a_missing_xcom(dag):
+    """A lost XCom renders as the string 'None'. Scoping dbt to a load called None would
+    no-op green when there is nothing new to process — the command must fail instead."""
+    import subprocess
+
+    import jinja2
+
+    class _NoXCom:
+        def xcom_pull(self, task_ids=None):
+            return None
+
+    command = dag.get_task("dbt_build").bash_command
+    rendered = jinja2.Environment().from_string(command).render(ti=_NoXCom())
+
+    result = subprocess.run(["bash", "-c", rendered], capture_output=True, text=True)
+    assert result.returncode == 1
+    assert "no load_id" in result.stderr
+
+
 def test_notification_is_a_no_op_without_a_webhook(monkeypatch):
     """The pipeline must be runnable by anyone with no configuration at all."""
     spec = importlib.util.spec_from_file_location("housing_pipeline_notify", DAG_FILE)

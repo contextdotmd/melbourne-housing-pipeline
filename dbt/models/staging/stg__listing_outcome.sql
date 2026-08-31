@@ -28,7 +28,7 @@ select
     distance                                     as cbd_distance_km,
     propertycount                                as property_count,
 
-    -- property identity (address alone is not unique: "14 Moray St" is in seven suburbs)
+    -- property identity (address alone is not unique: "5 Charles St" is in seven suburbs)
     trim(address)                                as street_address,
     lower(trim(address))                         as street_address_key,
 
@@ -62,5 +62,10 @@ left join {{ source('landing', 'ingest_receipt') }} as receipt
 {% if is_incremental() %}
 -- Loads already staged are skipped entirely: appending them twice would double the log and
 -- break the row ledger. This is what makes a re-run of the DAG harmless.
-where landing._load_id not in (select distinct load_id from {{ this }})
+-- NOT EXISTS rather than NOT IN: one null load_id ever reaching the table would make NOT IN
+-- unknown for every row, and staging would silently stop accepting loads forever.
+where not exists (
+    select 1 from {{ this }} as staged
+    where staged.load_id = landing._load_id
+)
 {% endif %}

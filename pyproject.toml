@@ -9,13 +9,8 @@ dependencies = [
     "pyarrow>=17.0.0",
 ]
 
-[project.optional-dependencies]
-# Airflow is resolved separately (see `make setup-airflow`): its transitive pins
-# conflict with dbt-core's if solved in the same environment.
-airflow = [
-    "apache-airflow==3.3.1",
-    "requests>=2.32.0",
-]
+# Airflow is deliberately absent: its transitive pins conflict with dbt-core's if solved
+# in the same environment, so install.sh --with-airflow builds .venv-airflow instead.
 
 [dependency-groups]
 dev = [

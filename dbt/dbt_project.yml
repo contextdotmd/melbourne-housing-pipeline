@@ -29,14 +29,16 @@ on-run-start:
 
 vars:
   # Consecutive appearances of an identical business signature closer together than this are
-  # treated as one event republished, not several events. Observed gaps cluster at 2 and 7
-  # days; the next is 14, then 49 - so this boundary sits in empty space (ADR-0006).
+  # treated as one event republished, not several events. Gaps of 21 days or less cluster at
+  # 2 and 7 days; the nearest gap above the window is 28 days, so the boundary sits in the
+  # empty stretch between 21 and 28 (ADR-0006).
   recapture_window_days: 21
 
-  # The reprocessing window a future incremental build would use (docs/incremental-design.md).
-  # Declared and asserted now, while the pipeline is still full-refresh, so the number is
-  # known to be safe before anything depends on it. assert_no_cluster_exceeds_lookback.sql
-  # fails the build if any dedup cluster ever grows past it.
+  # The reprocessing window the BigQuery port's partition-pruned incremental build would use
+  # (docs/warehouse-physical-design.md). The shipped DuckDB build reprocesses whole properties
+  # and does not depend on it; it is declared and asserted anyway so the number is known to be
+  # safe before that port does. assert_no_cluster_exceeds_lookback.sql fails the build if any
+  # dedup cluster ever grows past it.
   incremental_lookback_days: 90
 
   # Where the loader wrote. Overridable so a build can be pointed at an alternate landing

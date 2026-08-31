@@ -4,7 +4,7 @@ models:
   - name: analytics_suburb_monthly_market
     description: >
       Suburb × month market health. Built over a complete grid of suburbs and calendar months
-      rather than only the months that saw activity — with 112 active days across three years,
+      rather than only the months that saw activity — with 108 active days across three years,
       aggregating observed months alone would make `LAG` compare non-adjacent months while
       looking entirely correct. A month with no listings appears with zero, not as a gap.
 

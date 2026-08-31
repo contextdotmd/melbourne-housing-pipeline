@@ -4,7 +4,7 @@ status: accepted
 
 # Collapse duplicated rows under three named reasons, quarantine the evidence
 
-860 groups of rows are identical on every column except `Date`; 786 of them span exactly five
+858 groups of rows are identical on every column except `Date`; 786 of them span exactly five
 dates — 16/12/2017, 23/12/2017, 30/12/2017, 6/01/2018 and 8/01/2018 — each carrying exactly 787
 rows, 100% of which sit in a duplicate group. Inter-row gaps cluster at 7 days (2,395) and 2
 days (787). The source stopped updating over the Melbourne Christmas auction shutdown and
@@ -37,10 +37,13 @@ Quarantine reasons and their counts: `suspected_recapture` 3,200, `suspected_res
 
 ## Consequences
 
-The 21-day window is a judgement call. It was chosen because observed gaps cluster at 2 and 7
-days, the next is 14, and the one after that is 49 — so the boundary sits in empty space and
-preserves roughly ten groups that are identical-except-date but 49–203 days apart, which are
-plausible genuine relistings.
+The 21-day window is a judgement call. The full gap histogram: collapsed gaps sit at 2 days
+(787), 5, 6, 7 (2,395), 8 (3), 14 (10), 16 and 21 (2); the nearest gap the window keeps is 28
+days, and 20 reappearances between 28 and 812 days after their predecessor survive as
+plausible genuine relistings. The stretch between 21 and 28 is the widest empty gap in that
+histogram short of excluding likely real relistings, which is where the edge sits — with a
+collapsed pair at exactly 21, the boundary is load-bearing, and both edges are pinned by unit
+tests so it cannot drift silently.
 
 Note that any dedup key *including* `Date` is structurally blind to this artefact, because
 `Date` is precisely what varies. Quarantining rather than deleting keeps the decision provable

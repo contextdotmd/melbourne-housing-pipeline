@@ -28,7 +28,7 @@ while [ $# -gt 0 ]; do
         --csv=*)        CSV_ARG="${1#*=}"; shift ;;
         --with-airflow) WITH_AIRFLOW=1; shift ;;
         --yes|-y)       ASSUME_YES=1; shift ;;
-        -h|--help)      sed -n '3,12p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help)      sed -n '3,10p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *)              echo "unknown option: $1" >&2; exit 2 ;;
     esac
 done
@@ -121,8 +121,10 @@ ok "dbt packages installed"
 if [ "$WITH_AIRFLOW" = 1 ]; then
     step "Building the Airflow environment"
     # Airflow's transitive pins conflict with dbt-core's, so it gets its own venv.
+    # pyarrow and requests are the project code's own imports: the ingest task runs the
+    # loader inside this venv, and the failure notifier posts to Slack with requests.
     uv venv .venv-airflow --python 3.12
-    uv pip install --python .venv-airflow "apache-airflow==3.3.1" pytest \
+    uv pip install --python .venv-airflow "apache-airflow==3.3.1" pytest pyarrow requests \
         --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-3.3.1/constraints-3.12.txt"
     ok "Airflow ready at .venv-airflow"
 fi
@@ -131,7 +133,7 @@ fi
 
 step "Verifying the install"
 uv run dbt parse --project-dir dbt --profiles-dir dbt >/dev/null
-ok "dbt project parses — 16 models resolve"
+ok "dbt project parses"
 uv run --group dev pytest -q tests/test_loader.py tests/test_quality_gate.py >/dev/null
 ok "loader and quality-gate tests pass"
 

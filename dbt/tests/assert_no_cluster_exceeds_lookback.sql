@@ -1,14 +1,15 @@
--- Guards a decision the pipeline has not made yet.
+-- Guards a design the DuckDB pipeline does not use yet.
 --
--- A future incremental build reprocesses a bounded window around each affected event rather
--- than a property's entire history, because an unbounded scope cannot prune partitions (see
--- docs/warehouse-physical-design.md). That is only correct while no deduplication cluster
--- spans more than the window: a longer chain would be split, and its tail would survive into
--- the fact as a phantom event.
+-- The shipped incremental build reprocesses a property's entire history, so no look-back
+-- window exists to get wrong. The BigQuery port cannot afford that: an unbounded scope cannot
+-- prune partitions, so it reprocesses a bounded window around each affected event instead
+-- (see docs/warehouse-physical-design.md). That is only correct while no deduplication
+-- cluster spans more than the window: a longer chain would be split, and its tail would
+-- survive into the fact as a phantom event.
 --
--- Asserting it now, while the build is still full-refresh, means the window is known to be
--- safe before anything relies on it — rather than discovered to be too short afterwards, by
--- which time the damage is silent.
+-- Asserting it on every build here means the window is known to be safe before anything
+-- relies on it — rather than discovered to be too short afterwards, by which time the
+-- damage is silent.
 
 select
     business_signature,

@@ -56,7 +56,9 @@ select
     auction_listings::double / nullif(listings, 0) as auction_share,
     gmv / nullif(sum(gmv) over (partition by month_start, region_name), 0)
                                                    as region_gmv_share,
+    -- No tie-break column: equal GMV must mean equal rank, not an alphabetical ordering
+    -- disguised as one.
     dense_rank() over (
-        partition by month_start, region_name order by gmv desc, agent_key
+        partition by month_start, region_name order by gmv desc
     )                                              as rank_by_gmv_in_region
 from aggregated

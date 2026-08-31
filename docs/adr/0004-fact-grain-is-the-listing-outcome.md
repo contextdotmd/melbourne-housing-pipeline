@@ -9,8 +9,8 @@ event date — sold or not. Of 63,023 rows, 16,230 are not sales at all (`Method
 so a table named `sales` would assert something false about a quarter of its own contents and
 make every naive aggregate wrong.
 
-Keeping non-sales also makes clearance rate — sales divided by all outcomes, 74.2% across the
-period — computable at all. It is the headline measure of this market, and filtering to sold
+Keeping non-sales also makes clearance rate — sales divided by all outcomes: 74.2% at source
+grain, 74.3% in the fact once republications are collapsed — computable at all. It is the headline measure of this market, and filtering to sold
 rows destroys the denominator.
 
 ## Consequences

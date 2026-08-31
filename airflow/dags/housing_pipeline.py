@@ -1,7 +1,7 @@
 """Melbourne housing pipeline.
 
-The DAG is deliberately coarse — `ingest → dbt_build → dq_gate → notify` — rather than one
-Airflow task per dbt model (ADR-0003). dbt already derives the model graph from `ref()`;
+The DAG is deliberately coarse — `ingest → dbt_build → dq_gate`, with failure notification
+as a task-level callback — rather than one Airflow task per dbt model (ADR-0003). dbt already derives the model graph from `ref()`;
 mirroring it here would maintain the same graph twice, and only one copy fails loudly when
 they diverge. On DuckDB it would also be illusory: per-model tasks are separate processes and
 DuckDB permits a single writer, so they would have to run through a one-slot pool anyway.
@@ -84,7 +84,7 @@ with DAG(
 
         The id is what scopes the build downstream, so it is a task return value rather than
         something dbt has to rediscover. Idempotent: the id is the source SHA-256, so
-        re-running against identical bytes overwrites the same partition.
+        re-running against identical bytes is a no-op returning the original receipt.
         """
         from ingest.loader import load_csv
 
@@ -99,9 +99,17 @@ with DAG(
     dbt_build = BashOperator(
         task_id="dbt_build",
         cwd=str(PROJECT_ROOT),
+        # A single `{` is literal in Jinja — doubling the JSON braces breaks the render.
+        # A lost XCom renders as the literal string "None"; the guard fails the task
+        # rather than scoping dbt to a load that does not exist.
         bash_command=(
+            "LOAD_ID='{{ ti.xcom_pull(task_ids=\"ingest\") }}'\n"
+            'if [ -z "$LOAD_ID" ] || [ "$LOAD_ID" = None ]; then\n'
+            "    echo 'no load_id from the ingest task — was its XCom cleared?' >&2\n"
+            "    exit 1\n"
+            "fi\n"
             "uv run dbt build --project-dir dbt --profiles-dir dbt --fail-fast "
-            """ + --vars '{{"load_ids": ["{{ ti.xcom_pull(task_ids='ingest') }}"]}}' + """
+            '--vars "{\\"load_ids\\": [\\"$LOAD_ID\\"]}"'
         ),
         doc_md=(
             "Runs every model and every test in dependency order, scoped to the load just "
@@ -117,16 +125,19 @@ with DAG(
         """Fail the run on an unhealthy load.
 
         The rules live in ingest.quality_gate as a pure function so they are testable without
-        a scheduler; this task only locates the receipt and raises on the verdict.
+        a scheduler; this task only locates this run's receipt and raises on the verdict.
         """
-        receipts = sorted(
-            (PROJECT_ROOT / "data" / "ingest_receipt").glob("*.json"),
-            key=lambda path: path.stat().st_mtime,
-        )
-        if not receipts:
-            raise ValueError("no ingest receipt found — did the ingest task run?")
+        from airflow.sdk import get_current_context
 
-        receipt = json.loads(receipts[-1].read_text())
+        run_load_id = get_current_context()["ti"].xcom_pull(task_ids="ingest")
+        if not run_load_id:
+            raise ValueError("no load_id from the ingest task — did it run?")
+
+        receipt_path = PROJECT_ROOT / "data" / "ingest_receipt" / f"{run_load_id}.json"
+        if not receipt_path.exists():
+            raise ValueError(f"no ingest receipt for load {run_load_id} — did the ingest task run?")
+
+        receipt = json.loads(receipt_path.read_text())
         problems = evaluate_receipt(receipt)
         if problems:
             raise ValueError("data quality gate failed: " + "; ".join(problems))

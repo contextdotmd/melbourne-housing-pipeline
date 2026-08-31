@@ -10,6 +10,8 @@ external metadata database, so it adds a real scheduler without adding infrastru
 
 ## Consequences
 
-Airflow's dependency tree conflicts with dbt-core's when resolved together, so it lives in a
-separate `airflow` optional-dependency group installed into its own environment. Two
-environments is the cost of having both tools at current versions.
+Airflow's dependency tree conflicts with dbt-core's when resolved together, so
+`install.sh --with-airflow` builds it a separate environment at `.venv-airflow`, pinned by the
+official constraints file and carrying the project code's own imports (pyarrow for the ingest
+task, requests for the failure notifier). Two environments is the cost of having both tools at
+current versions.
