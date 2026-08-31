@@ -13,6 +13,8 @@ Rebuilds everything from the source file in about eight seconds. No cloud accoun
 
 Source: `MELBOURNE_HOUSE_PRICES_LESS.csv` — 63,023 rows, 2016-01-28 → 2018-10-13.
 
+![Pipeline architecture](docs/architecture.png)
+
 ---
 
 ## Business questions
@@ -87,8 +89,6 @@ Full entity mapping — what the source keeps, collapses and omits — in
 [docs/data-model.md](docs/data-model.md).
 
 ### Physical
-
-![Pipeline architecture](docs/architecture.png)
 
 ```mermaid
 erDiagram
